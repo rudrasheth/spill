@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Send, Users, ShieldAlert, Hash, ChevronLeft } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
-import { getCurrentUserProfile } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
@@ -40,32 +40,6 @@ const DEFAULT_CHANNELS = [
   { id: 'vc-funding-drama', name: 'vc-funding-drama', desc: 'Downrounds, valuation cuts, pitch decks.' },
 ];
 
-const ROOM_CONVERSATIONS: Record<string, string[]> = {
-  'general-spill': [
-    "Did anyone see the CEO of that fintech last night? Absolutely wasted.",
-    "Heard someone is leaving the marketing team next week.",
-    "Spill the tea on the QA layoffs — who got cut?",
-    "Co-founder is apparently locked out of the Github org.",
-    "Posting the pitch deck screenshot later. Get your Receipts ready.",
-  ],
-  'crypto-rumors': [
-    "Rumor has it a major L2 is planning an unannounced token airdrop.",
-    "A certain web3 VC had their telegram hacked yesterday.",
-    "Anyone got the Slack announcement screenshot from the protocol team?",
-    "Watching this thread in silence...",
-    "Heard that the treasury has less than 6 months of runway left.",
-  ],
-  'vc-funding-drama': [
-    "Are we sure that VC story is even real? Sounds made up.",
-    "Valuations are down 80% across the board. Downrounds incoming.",
-    "Probably fake gossip posted to farm tokens.",
-    "Who verified this screenshot? Could easily be edited in DevTools.",
-    "CEO is frantically pitching angels to survive the month.",
-  ],
-};
-
-const BOT_ALIASES = ['@GossipGirl', '@TeaSpiller_02', '@RumorMill_99', '@SiliconInsider', '@SpyX'];
-
 export default function ChaosRoomsScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
@@ -85,60 +59,94 @@ export default function ChaosRoomsScreen() {
     init();
   }, []);
 
-  useEffect(() => {
-    if (activeChannel && currentUser) {
-      const initialTexts = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
-      const seedMsgs: ChatMessage[] = initialTexts.map((text, index) => {
-        const randBot = BOT_ALIASES[index % BOT_ALIASES.length];
-        return {
-          id: `msg-seed-${index}-${activeChannel}`,
-          sender: randBot,
-          text,
-          timestamp: new Date(Date.now() - (initialTexts.length - index) * 120000)
-            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isMe: false,
-        };
-      });
-      setMessages(seedMsgs);
-      setActiveUsers(Math.floor(Math.random() * 8) + 5);
+  const loadMessages = async (channelId: string) => {
+    // Only fetch messages from the last 15 minutes to simulate ephemeral UI
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60000).toISOString();
+    
+    const { data } = await supabase
+      .from('group_messages')
+      .select('*, users(alias)')
+      .eq('group_id', channelId)
+      .gt('created_at', fifteenMinsAgo)
+      .order('created_at', { ascending: true });
+
+    if (data && currentUser) {
+      const formatted = data.map((msg: any) => ({
+        id: msg.id,
+        sender: `@${msg.users?.alias || 'Unknown'}`,
+        text: msg.message,
+        timestamp: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isMe: msg.sender_id === currentUser.id,
+      }));
+      setMessages(formatted);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
+  };
+
+  useEffect(() => {
+    if (!activeChannel || !currentUser) return;
+    
+    loadMessages(activeChannel);
+    setActiveUsers(Math.floor(Math.random() * 8) + 5);
+
+    // Subscribe to new messages
+    const subscription = supabase
+      .channel(`room:${activeChannel}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${activeChannel}` }, async (payload) => {
+        const newMsg = payload.new;
+        // Fetch sender alias since it's not in the payload
+        const { data: user } = await supabase.from('users').select('alias').eq('id', newMsg.sender_id).single();
+        
+        const formatted: ChatMessage = {
+          id: newMsg.id,
+          sender: `@${user?.alias || 'Unknown'}`,
+          text: newMsg.message,
+          timestamp: new Date(newMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: newMsg.sender_id === currentUser.id,
+        };
+        
+        setMessages(prev => {
+          // Avoid duplicates if we just sent it
+          if (prev.find(m => m.id === formatted.id)) return prev;
+          return [...prev, formatted];
+        });
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
   }, [activeChannel, currentUser]);
 
-  useEffect(() => {
-    const chatSimulator = setInterval(() => {
-      if (!currentUser || !activeChannel) return;
-      const pool = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
-      const randomText = pool[Math.floor(Math.random() * pool.length)];
-      const randomBot = BOT_ALIASES[Math.floor(Math.random() * BOT_ALIASES.length)];
-      
-      const newMsg: ChatMessage = {
-        id: `sim-${Date.now()}`,
-        sender: randomBot,
-        text: randomText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isMe: false,
-      };
-      setMessages(prev => [...prev, newMsg]);
-      setActiveUsers(prev => Math.max(3, prev + (Math.random() > 0.5 ? 1 : -1)));
-    }, 15000);
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || !currentUser || !activeChannel) return;
+    const textToSend = inputText.trim();
+    setInputText('');
 
-    return () => clearInterval(chatSimulator);
-  }, [currentUser, activeChannel]);
-
-  const handleSendMessage = () => {
-    if (!inputText.trim() || !currentUser) return;
-    
-    const newMsg: ChatMessage = {
-      id: `my-${Date.now()}`,
+    // Optimistic UI update
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticMsg: ChatMessage = {
+      id: optimisticId,
       sender: `@${currentUser.alias}`,
-      text: inputText.trim(),
+      text: textToSend,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isMe: true,
     };
-
-    setMessages(prev => [...prev, newMsg]);
-    setInputText('');
+    setMessages(prev => [...prev, optimisticMsg]);
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+
+    const { error } = await supabase.from('group_messages').insert([{
+      group_id: activeChannel,
+      sender_id: currentUser.id,
+      message: textToSend,
+    }]);
+
+    if (error) {
+      console.error("Failed to send:", error);
+      // Remove optimistic message if failed
+      setMessages(prev => prev.filter(m => m.id !== optimisticId));
+    }
   };
 
   const handleJoinGroup = () => {
@@ -230,7 +238,7 @@ export default function ChaosRoomsScreen() {
           <View style={styles.disclaimerRow}>
             <ShieldAlert size={12} color={T.brand} style={{ marginRight: 6 }} />
             <Text style={styles.disclaimerText}>
-              Group chat history is not persistent and automatically auto-expires.
+              Group chat history is retained server-side for 24h, but auto-expires from this UI after 15 minutes.
             </Text>
           </View>
 

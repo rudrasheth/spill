@@ -49,6 +49,16 @@ create table if not exists reports (
   created_at timestamptz default now()
 );
 
+-- 5. GROUP MESSAGES TABLE
+-- Retained server-side for 24-48h for moderation, but UI only queries recent messages
+create table if not exists group_messages (
+  id uuid primary key default gen_random_uuid(),
+  group_id text not null,
+  sender_id uuid references users(id) on delete cascade,
+  message text not null,
+  created_at timestamptz default now()
+);
+
 -- =====================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =====================================================================
@@ -57,6 +67,7 @@ alter table users enable row level security;
 alter table posts enable row level security;
 alter table unlocks enable row level security;
 alter table reports enable row level security;
+alter table group_messages enable row level security;
 
 -- USERS POLICIES
 drop policy if exists "Public profile read access" on users;
@@ -111,6 +122,17 @@ drop policy if exists "Operators can read reports" on reports;
 create policy "Operators can read reports" 
   on reports for select 
   using (true); -- Restrict to admin roles in real production if needed
+
+-- GROUP MESSAGES POLICIES
+drop policy if exists "Anyone can read group messages" on group_messages;
+create policy "Anyone can read group messages" 
+  on group_messages for select 
+  using (true);
+
+drop policy if exists "Users can insert group messages" on group_messages;
+create policy "Users can insert group messages" 
+  on group_messages for insert 
+  with check (auth.uid() = sender_id);
 
 -- =====================================================================
 -- ATOMIC UNLOCK POST TRANSACTION (RPC)
