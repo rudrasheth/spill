@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Slot, Tabs, router, usePathname } from 'expo-router';
+import { Slot, router, usePathname } from 'expo-router';
 import { ThemeProvider, DefaultTheme } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
 import {
@@ -18,16 +18,14 @@ import { supabase } from '@/lib/supabase';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// Design tokens — one place, used everywhere
 export const T = {
   brand: '#FF3B5C',
-  bg: '#FFFFFF',
-  text: '#1A1A1A',
-  muted: '#8A8A8A',
-  surface: '#F5F5F5',
-  glass: '#FFFFFF',
-  glassDark: '#F5F5F5',
-  border: '#EAEAEA',
+  bg: '#0E0E10',
+  text: '#FFFFFF',
+  muted: '#8E8E93',
+  surface: '#1C1C1E',
+  border: '#2C2C2E',
+  success: '#30D158',
 };
 
 export default function RootLayout() {
@@ -135,34 +133,33 @@ export default function RootLayout() {
     );
   }
 
+  // Custom Mobile Layout
   return (
     <ThemeProvider value={DefaultTheme}>
-      <Tabs
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: T.brand,
-          tabBarInactiveTintColor: T.muted,
-          tabBarStyle: {
-            backgroundColor: '#0E0E10',
-            borderTopColor: T.border,
-            borderTopWidth: 1,
-            height: 62,
-            paddingBottom: 8,
-            paddingTop: 8,
-          } as any,
-          tabBarLabelStyle: {
-            fontFamily: 'Inter',
-            fontSize: 10,
-            fontWeight: '600',
-          },
-        }}
-      >
-        <Tabs.Screen name="index"   options={{ title: 'Feed',   tabBarIcon: ({ color, size }) => <Flame   size={size} color={color} /> }} />
-        <Tabs.Screen name="chaos"   options={{ title: 'Chaos',  tabBarIcon: ({ color, size }) => <Zap     size={size} color={color} /> }} />
-        <Tabs.Screen name="post"    options={{ title: 'Spill',  tabBarIcon: ({ color, size }) => <Plus    size={size} color={color} /> }} />
-        <Tabs.Screen name="wallet"  options={{ title: 'Wallet', tabBarIcon: ({ color, size }) => <Ticket  size={size} color={color} /> }} />
-        <Tabs.Screen name="profile" options={{ title: 'Logs',   tabBarIcon: ({ color, size }) => <Terminal size={size} color={color} /> }} />
-      </Tabs>
+      <View style={styles.mobileContainer}>
+        <View style={styles.mainContent}>
+          <Slot />
+        </View>
+        <View style={styles.mobileTabBar}>
+          {buttons.map((btn) => {
+            // Match pathname precisely (expo router maps '/' to '/index' sometimes or just '/')
+            const isFocused = pathname === btn.path || (pathname === '/index' && btn.path === '/');
+            const Icon = btn.icon;
+            return (
+              <Pressable
+                key={btn.path}
+                onPress={() => router.push(btn.path as any)}
+                style={styles.mobileTabBtn}
+              >
+                <Icon size={22} color={isFocused ? T.brand : T.muted} />
+                <Text style={[styles.mobileTabText, isFocused && { color: T.brand }]}>
+                  {btn.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
     </ThemeProvider>
   );
 }
@@ -171,23 +168,28 @@ const styles = StyleSheet.create({
   desktopContainer: {
     flexDirection: 'row',
     flex: 1,
-    height: '100vh' as any,
-    backgroundColor: '#FFFFFF',
+    height: Platform.OS === 'web' ? '100vh' : '100%',
+    backgroundColor: '#0E0E10',
+  },
+  mobileContainer: {
+    flex: 1,
+    backgroundColor: '#0E0E10',
+    height: Platform.OS === 'web' ? '100dvh' : '100%',
   },
 
   // ── Sidebar ─────────────────────────────────────────
   desktopSidebar: {
     width: 220,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0E0E10',
     borderRightWidth: 1,
-    borderRightColor: '#EAEAEA',
+    borderRightColor: '#2C2C2E',
     padding: Spacing.four,
     flexDirection: 'column',
   },
   mainContent: {
     flex: 1,
     height: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0E0E10',
   },
 
   brandContainer: {
@@ -246,9 +248,9 @@ const styles = StyleSheet.create({
   // ── Right Sidebar ─────────────────────────────────────────
   rightSidebar: {
     width: 280,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#0E0E10',
     borderLeftWidth: 1,
-    borderLeftColor: '#EAEAEA',
+    borderLeftColor: '#2C2C2E',
     padding: Spacing.four,
     flexDirection: 'column',
   },
@@ -301,5 +303,28 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#8A8A8A',
     marginTop: 2,
+  },
+  // ── Mobile Bottom Bar ─────────────────────────────────────────
+  mobileTabBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#0E0E10',
+    borderTopWidth: 1,
+    borderTopColor: '#2C2C2E',
+    paddingVertical: 10,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+  },
+  mobileTabBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  mobileTabText: {
+    fontFamily: 'Inter',
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginTop: 4,
   },
 });

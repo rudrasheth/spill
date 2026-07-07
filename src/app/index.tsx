@@ -6,11 +6,11 @@ import {
   FlatList,
   Pressable,
   useWindowDimensions,
-  Platform,
   Image,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Lock, Unlock, Eye, HelpCircle } from 'lucide-react-native';
+import { Lock, Unlock, Eye, HelpCircle, Edit2, Check, X } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, mockDatabase, Post } from '@/lib/supabase';
@@ -26,6 +26,9 @@ export default function GossipFeedScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [unlockedPostIds, setUnlockedPostIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editCaption, setEditCaption] = useState('');
 
   let numCols = 1;
   if (width >= 1024) numCols = 3;
@@ -60,6 +63,17 @@ export default function GossipFeedScreen() {
       loadFeedData();
     } catch (err: any) {
       alert(err.message || 'Unlock failed');
+    }
+  };
+
+  const handleSaveEdit = async (postId: string) => {
+    if (!editCaption.trim()) return;
+    try {
+      await supabase.from('posts').update({ caption: editCaption }).eq('id', postId);
+      setEditingPostId(null);
+      loadFeedData();
+    } catch (err: any) {
+      alert(err.message || 'Edit failed');
     }
   };
 
@@ -129,7 +143,29 @@ export default function GossipFeedScreen() {
         {/* Body Text */}
         <View style={styles.cardBody}>
           {isUnlocked ? (
-            <Text style={styles.unlockedCaption}>{item.caption}</Text>
+            editingPostId === item.id ? (
+              <View style={styles.editContainer}>
+                <TextInput
+                  style={styles.editInput}
+                  multiline
+                  value={editCaption}
+                  onChangeText={setEditCaption}
+                  autoFocus
+                />
+                <View style={styles.editActions}>
+                  <Pressable style={styles.saveBtn} onPress={() => handleSaveEdit(item.id)}>
+                    <Check size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  </Pressable>
+                  <Pressable style={styles.cancelBtn} onPress={() => setEditingPostId(null)}>
+                    <X size={14} color="#8E8E93" style={{ marginRight: 4 }} />
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.unlockedCaption}>{item.caption}</Text>
+            )
           ) : (
             <View style={styles.lockedTeaserContainer}>
               <HelpCircle size={14} color="#8E8E93" style={{ marginRight: 6 }} />
@@ -143,11 +179,25 @@ export default function GossipFeedScreen() {
           <Text style={styles.footerTime}>
             Posted {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
-          {item.expires_at && (
-            <Text style={styles.footerExpiry}>
-              Expires in {Math.max(0, Math.round((new Date(item.expires_at).getTime() - Date.now()) / (60 * 1000)))}m
-            </Text>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {isAuthor && editingPostId !== item.id && (
+              <Pressable 
+                style={styles.editBtn} 
+                onPress={() => {
+                  setEditingPostId(item.id);
+                  setEditCaption(item.caption);
+                }}
+              >
+                <Edit2 size={12} color="#FF3B5C" style={{ marginRight: 4 }} />
+                <Text style={styles.editBtnText}>Edit</Text>
+              </Pressable>
+            )}
+            {item.expires_at && (
+              <Text style={styles.footerExpiry}>
+                Expires in {Math.max(0, Math.round((new Date(item.expires_at).getTime() - Date.now()) / (60 * 1000)))}m
+              </Text>
+            )}
+          </View>
         </View>
       </View>
     );
@@ -352,6 +402,67 @@ const styles = StyleSheet.create({
     fontFamily: 'IBM Plex Mono',
     fontSize: 10,
     color: '#FF3B5C',
+    fontWeight: 'bold',
+  },
+  editBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: '#FF3B5C',
+    fontWeight: '600',
+  },
+  editContainer: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  editInput: {
+    backgroundColor: '#0E0E10',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    color: '#FFFFFF',
+    fontFamily: 'Inter',
+    fontSize: 13.5,
+    padding: 8,
+    borderRadius: 6,
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  saveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF3B5C',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  saveBtnText: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  cancelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+    borderWidth: 1,
+    borderColor: '#2C2C2E',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  cancelBtnText: {
+    color: '#8E8E93',
+    fontFamily: 'Inter',
+    fontSize: 11,
     fontWeight: 'bold',
   },
   emptyContainer: {
