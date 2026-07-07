@@ -163,7 +163,7 @@ begin
   -- Record the unlock transaction in history
   insert into unlocks (post_id, unlocker_id) values (p_post_id, p_user_id);
 end;
-$$ language plpgsql;
+$$ language plpgsql security definer set search_path = public;
 
 -- =====================================================================
 -- REPORT AUTOMATION TRIGGERS
