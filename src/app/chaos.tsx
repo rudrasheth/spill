@@ -11,7 +11,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Send, Users, ShieldAlert, Hash } from 'lucide-react-native';
+import { Send, Users, ShieldAlert, Hash, ChevronLeft } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { getCurrentUserProfile } from '@/lib/supabase';
@@ -34,7 +34,7 @@ interface ChatMessage {
   isMe: boolean;
 }
 
-const CHANNELS = [
+const DEFAULT_CHANNELS = [
   { id: 'general-spill', name: 'general-spill', desc: 'Main gossip channel for the group.' },
   { id: 'crypto-rumors', name: 'crypto-rumors', desc: 'Leaks and rumors from the web3 space.' },
   { id: 'vc-funding-drama', name: 'vc-funding-drama', desc: 'Downrounds, valuation cuts, pitch decks.' },
@@ -68,18 +68,25 @@ const BOT_ALIASES = ['@GossipGirl', '@TeaSpiller_02', '@RumorMill_99', '@Silicon
 
 export default function ChaosRoomsScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [activeChannel, setActiveChannel] = useState(CHANNELS[0].id);
+  const [activeChannel, setActiveChannel] = useState<string | null>(null);
+  const [myGroups, setMyGroups] = useState(DEFAULT_CHANNELS);
+  const [joinCode, setJoinCode] = useState('');
+  
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [activeUsers, setActiveUsers] = useState(12);
   const flatListRef = useRef<FlatList>(null);
 
-  const loadUserData = async () => {
-    const me = await getCurrentUserProfile();
-    if (me) {
-      setCurrentUser(me);
+  useEffect(() => {
+    const init = async () => {
+      const me = await getCurrentUserProfile();
+      if (me) setCurrentUser(me);
+    };
+    init();
+  }, []);
 
-      // Seed initial messages for this channel
+  useEffect(() => {
+    if (activeChannel && currentUser) {
       const initialTexts = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
       const seedMsgs: ChatMessage[] = initialTexts.map((text, index) => {
         const randBot = BOT_ALIASES[index % BOT_ALIASES.length];
@@ -95,16 +102,11 @@ export default function ChaosRoomsScreen() {
       setMessages(seedMsgs);
       setActiveUsers(Math.floor(Math.random() * 8) + 5);
     }
-  };
+  }, [activeChannel, currentUser]);
 
-  useEffect(() => {
-    loadUserData();
-  }, [activeChannel]);
-
-  // Simulate active background chatters
   useEffect(() => {
     const chatSimulator = setInterval(() => {
-      if (!currentUser) return;
+      if (!currentUser || !activeChannel) return;
       const pool = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
       const randomText = pool[Math.floor(Math.random() * pool.length)];
       const randomBot = BOT_ALIASES[Math.floor(Math.random() * BOT_ALIASES.length)];
@@ -139,12 +141,71 @@ export default function ChaosRoomsScreen() {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  const activeChanInfo = CHANNELS.find(c => c.id === activeChannel) || CHANNELS[0];
+  const handleJoinGroup = () => {
+    if (!joinCode.trim()) return;
+    const cleanId = joinCode.toLowerCase().replace(/\s+/g, '-');
+    if (!myGroups.find(g => g.id === cleanId)) {
+      setMyGroups(prev => [{
+        id: cleanId,
+        name: cleanId,
+        desc: 'Private encrypted group chat.'
+      }, ...prev]);
+    }
+    setActiveChannel(cleanId);
+    setJoinCode('');
+  };
+
+  if (!activeChannel) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <Text style={styles.roomName}>My Groups</Text>
+          </View>
+        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: Spacing.four }}>
+          <View style={styles.joinCard}>
+            <Text style={styles.sectionTitle}>JOIN PRIVATE GROUP</Text>
+            <View style={styles.joinRow}>
+              <TextInput
+                style={styles.joinInput}
+                placeholder="Enter Invite Code..."
+                placeholderTextColor={T.muted}
+                value={joinCode}
+                onChangeText={setJoinCode}
+              />
+              <Pressable style={styles.joinBtn} onPress={handleJoinGroup}>
+                <Text style={styles.joinBtnText}>Join</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.four, marginBottom: Spacing.two }]}>YOUR GROUPS</Text>
+          {myGroups.map(g => (
+            <Pressable key={g.id} style={styles.groupCard} onPress={() => setActiveChannel(g.id)}>
+              <View style={styles.groupIcon}>
+                <Hash size={16} color={T.brand} />
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={styles.groupCardName}>#{g.name}</Text>
+                <Text style={styles.groupCardDesc}>{g.desc}</Text>
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  const activeChanInfo = myGroups.find(c => c.id === activeChannel) || myGroups[0];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Upper header */}
       <View style={styles.header}>
+        <Pressable onPress={() => setActiveChannel(null)} style={{ marginRight: 12 }}>
+          <ChevronLeft size={24} color={T.text} />
+        </Pressable>
         <View style={styles.titleRow}>
           <View style={styles.pulseDot} />
           <View>
@@ -153,32 +214,10 @@ export default function ChaosRoomsScreen() {
           </View>
         </View>
         <View style={styles.roomBadge}>
-          <Users size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+          <Users size={12} color={T.text} style={{ marginRight: 4 }} />
           <Text style={styles.badgeText}>{activeUsers} ONLINE</Text>
         </View>
       </View>
-
-      {/* Channel list selector */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, backgroundColor: T.bg, borderBottomWidth: 1, borderBottomColor: T.border }}>
-        <View style={styles.channelRow}>
-        {CHANNELS.map((chan) => {
-          const isSelected = activeChannel === chan.id;
-          return (
-            <Pressable
-              key={chan.id}
-              style={[styles.channelTag, isSelected && styles.channelTagActive]}
-              onPress={() => setActiveChannel(chan.id)}
-              id={`btn-channel-${chan.id}`}
-            >
-              <Hash size={12} color={isSelected ? '#FFFFFF' : T.muted} style={{ marginRight: 4 }} />
-              <Text style={[styles.channelTagText, isSelected && styles.channelTagTextActive]}>
-                {chan.name}
-              </Text>
-            </Pressable>
-          );
-        })}
-        </View>
-      </ScrollView>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -191,7 +230,7 @@ export default function ChaosRoomsScreen() {
           <View style={styles.disclaimerRow}>
             <ShieldAlert size={12} color={T.brand} style={{ marginRight: 6 }} />
             <Text style={styles.disclaimerText}>
-              Chaos rooms chat history is not persistent and automatically auto-expires.
+              Group chat history is not persistent and automatically auto-expires.
             </Text>
           </View>
 
@@ -262,7 +301,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: T.border,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   titleRow: {
@@ -305,34 +343,81 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1A1A1A',
   },
-  channelRow: {
+  joinCard: {
+    backgroundColor: T.surface,
+    borderRadius: 12,
+    padding: Spacing.four,
+    borderWidth: 1,
+    borderColor: T.border,
+    marginBottom: Spacing.four,
+  },
+  sectionTitle: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 10,
+    fontWeight: '700',
+    color: T.muted,
+    letterSpacing: 1.5,
+    marginBottom: Spacing.three,
+  },
+  joinRow: {
     flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
     gap: Spacing.two,
   },
-  channelTag: {
+  joinInput: {
+    flex: 1,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    fontFamily: 'Inter',
+    color: T.text,
+  },
+  joinBtn: {
+    backgroundColor: T.brand,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    height: 44,
+  },
+  joinBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  groupCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: T.surface,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
     borderWidth: 1,
     borderColor: T.border,
+    borderRadius: 12,
+    padding: Spacing.three,
+    marginBottom: Spacing.two,
   },
-  channelTagActive: {
-    backgroundColor: T.brand,
-    borderColor: T.brand,
+  groupIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 59, 92, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
   },
-  channelTagText: {
+  groupCardName: {
     fontFamily: 'Inter',
-    fontSize: 12,
-    fontWeight: '600',
-    color: T.muted,
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: T.text,
   },
-  channelTagTextActive: {
-    color: '#FFFFFF',
+  groupCardDesc: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: T.muted,
+    marginTop: 2,
   },
   disclaimerRow: {
     flexDirection: 'row',

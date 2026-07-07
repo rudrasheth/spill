@@ -44,7 +44,7 @@ export default function RootLayout() {
 
   const buttons = [
     { name: 'Feed',   path: '/',        icon: Flame    },
-    { name: 'Chaos',  path: '/chaos',   icon: Zap      },
+    { name: 'Groups', path: '/chaos',   icon: Zap      },
     { name: 'Spill',  path: '/post',    icon: Plus     },
     { name: 'Wallet', path: '/wallet',  icon: Ticket   },
     { name: 'Logs',   path: '/profile', icon: Terminal },

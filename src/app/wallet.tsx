@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit',
     fontSize: 44,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: T.text,
     lineHeight: 50,
   },
   tokenUnit: {
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit',
     fontSize: 16,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: T.text,
   },
   packageDesc: {
     fontFamily: 'Inter',
@@ -409,7 +409,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: T.text,
   },
   ledgerTime: {
     fontFamily: 'Inter',
