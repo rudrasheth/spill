@@ -20,11 +20,11 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export const T = {
   brand: '#FF3B5C',
-  bg: '#0E0E10',
-  text: '#FFFFFF',
-  muted: '#8E8E93',
-  surface: '#1C1C1E',
-  border: '#2C2C2E',
+  bg: '#FFFFFF',
+  text: '#1A1A1A',
+  muted: '#8A8A8A',
+  surface: '#F5F5F5',
+  border: '#EAEAEA',
   success: '#30D158',
 };
 
@@ -169,27 +169,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flex: 1,
     height: Platform.OS === 'web' ? '100vh' : '100%',
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
   },
   mobileContainer: {
     flex: 1,
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     height: Platform.OS === 'web' ? '100dvh' : '100%',
   },
 
   // ── Sidebar ─────────────────────────────────────────
   desktopSidebar: {
     width: 220,
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     borderRightWidth: 1,
-    borderRightColor: '#2C2C2E',
+    borderRightColor: '#EAEAEA',
     padding: Spacing.four,
     flexDirection: 'column',
   },
   mainContent: {
     flex: 1,
     height: '100%',
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
   },
 
   brandContainer: {
@@ -248,9 +248,9 @@ const styles = StyleSheet.create({
   // ── Right Sidebar ─────────────────────────────────────────
   rightSidebar: {
     width: 280,
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     borderLeftWidth: 1,
-    borderLeftColor: '#2C2C2E',
+    borderLeftColor: '#EAEAEA',
     padding: Spacing.four,
     flexDirection: 'column',
   },
@@ -309,9 +309,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#2C2C2E',
+    borderTopColor: '#EAEAEA',
     paddingVertical: 10,
     paddingBottom: Platform.OS === 'ios' ? 24 : 10,
   },
@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 10,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: '#8A8A8A',
     marginTop: 4,
   },
 });

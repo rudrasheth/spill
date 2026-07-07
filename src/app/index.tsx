@@ -158,7 +158,7 @@ export default function GossipFeedScreen() {
                     <Text style={styles.saveBtnText}>Save</Text>
                   </Pressable>
                   <Pressable style={styles.cancelBtn} onPress={() => setEditingPostId(null)}>
-                    <X size={14} color="#8E8E93" style={{ marginRight: 4 }} />
+                    <X size={14} color="#8A8A8A" style={{ marginRight: 4 }} />
                     <Text style={styles.cancelBtnText}>Cancel</Text>
                   </Pressable>
                 </View>
@@ -168,7 +168,7 @@ export default function GossipFeedScreen() {
             )
           ) : (
             <View style={styles.lockedTeaserContainer}>
-              <HelpCircle size={14} color="#8E8E93" style={{ marginRight: 6 }} />
+              <HelpCircle size={14} color="#8A8A8A" style={{ marginRight: 6 }} />
               <Text style={styles.lockedTeaserText}>Caption is encrypted and locked.</Text>
             </View>
           )}
@@ -240,7 +240,7 @@ export default function GossipFeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0E0E10' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -248,20 +248,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     borderBottomWidth: 1,
-    borderBottomColor: '#1C1C1E',
-    backgroundColor: '#0E0E10',
+    borderBottomColor: '#F5F5F5',
+    backgroundColor: '#FFFFFF',
   },
   pageSubtitle: { fontFamily: 'IBM Plex Mono', fontSize: 9, fontWeight: '700', color: '#FF3B5C', letterSpacing: 2 },
-  pageTitle: { fontFamily: 'Outfit', fontSize: 24, fontWeight: '900', color: '#FFFFFF' },
-  dateText: { fontFamily: 'Inter', fontSize: 12, fontWeight: '600', color: '#8E8E93' },
+  pageTitle: { fontFamily: 'Outfit', fontSize: 24, fontWeight: '900', color: '#1A1A1A' },
+  dateText: { fontFamily: 'Inter', fontSize: 12, fontWeight: '600', color: '#8A8A8A' },
   feedContent: { padding: Spacing.three, paddingBottom: 80 },
   columnWrapper: { gap: Spacing.three, justifyContent: 'flex-start' },
   postCard: {
     flex: 1,
     minWidth: 280,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EAEAEA',
     borderRadius: 16,
     marginBottom: Spacing.three,
     marginHorizontal: Spacing.half,
@@ -277,14 +277,14 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#EAEAEA',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#FF3B5C',
   },
   badgeText: {
-    color: '#FFFFFF',
+    color: '#1A1A1A',
     fontFamily: 'Outfit',
     fontSize: 12,
     fontWeight: 'bold',
@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
   },
   statusRow: {
     flexDirection: 'row',
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontFamily: 'IBM Plex Mono',
     fontSize: 8,
-    color: '#8E8E93',
+    color: '#8A8A8A',
     fontWeight: '700',
     letterSpacing: 0.5,
   },
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     marginBottom: Spacing.three,
   },
   cardImage: {
@@ -337,12 +337,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#F5F5F5',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EAEAEA',
   },
   overlayTeaser: {
     fontFamily: 'Inter',
@@ -366,12 +366,12 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   cardBody: {
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     borderRadius: 10,
     padding: Spacing.three,
     marginBottom: Spacing.two,
     borderWidth: 1,
-    borderColor: '#1C1C1E',
+    borderColor: '#F5F5F5',
   },
   lockedTeaserContainer: {
     flexDirection: 'row',
@@ -380,13 +380,13 @@ const styles = StyleSheet.create({
   lockedTeaserText: {
     fontFamily: 'Inter',
     fontSize: 13,
-    color: '#8E8E93',
+    color: '#8A8A8A',
   },
   unlockedCaption: {
     fontFamily: 'Inter',
     fontSize: 13.5,
     lineHeight: 20,
-    color: '#E5E5EA',
+    color: '#1A1A1A',
   },
   cardFooter: {
     flexDirection: 'row',
@@ -396,7 +396,7 @@ const styles = StyleSheet.create({
   footerTime: {
     fontFamily: 'Inter',
     fontSize: 10,
-    color: '#8E8E93',
+    color: '#8A8A8A',
   },
   footerExpiry: {
     fontFamily: 'IBM Plex Mono',
@@ -419,10 +419,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   editInput: {
-    backgroundColor: '#0E0E10',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
-    color: '#FFFFFF',
+    borderColor: '#EAEAEA',
+    color: '#1A1A1A',
     fontFamily: 'Inter',
     fontSize: 13.5,
     padding: 8,
@@ -452,15 +452,15 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EAEAEA',
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 6,
   },
   cancelBtnText: {
-    color: '#8E8E93',
+    color: '#8A8A8A',
     fontFamily: 'Inter',
     fontSize: 11,
     fontWeight: 'bold',
@@ -473,7 +473,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontFamily: 'Inter',
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#8A8A8A',
     textAlign: 'center',
   },
   statsBar: {
@@ -481,13 +481,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#1C1C1E',
+    borderTopColor: '#F5F5F5',
     marginTop: Spacing.three,
   },
   statsText: {
     fontFamily: 'IBM Plex Mono',
     fontSize: 10,
-    color: '#8E8E93',
+    color: '#8A8A8A',
   },
   pressed: {
     opacity: 0.85,

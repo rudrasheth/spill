@@ -17,11 +17,11 @@ import { supabase, mockDatabase } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
-  bg: '#0E0E10',
-  text: '#FFFFFF',
-  muted: '#8E8E93',
-  surface: '#1C1C1E',
-  border: '#2C2C2E',
+  bg: '#FFFFFF',
+  text: '#1A1A1A',
+  muted: '#8A8A8A',
+  surface: '#F5F5F5',
+  border: '#EAEAEA',
   success: '#30D158',
 };
 
@@ -258,7 +258,7 @@ export default function ProfileScreen() {
               <TextInput
                 style={styles.authInput}
                 placeholder="Operator Key (SPILL_ADMIN)"
-                placeholderTextColor="#8E8E93"
+                placeholderTextColor="#8A8A8A"
                 secureTextEntry
                 value={adminPass}
                 onChangeText={setAdminPass}
@@ -451,15 +451,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
   },
   anonNameInput: {
     fontFamily: 'Inter',
     fontSize: 15,
     fontWeight: '800',
-    color: '#FFFFFF',
-    backgroundColor: '#0E0E10',
-    borderColor: '#2C2C2E',
+    color: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#EAEAEA',
     borderWidth: 1,
     borderRadius: 6,
     paddingHorizontal: 8,
@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
   },
   sectionTitle: {
     fontFamily: 'IBM Plex Mono',
@@ -562,7 +562,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 11,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
     marginLeft: 6,
     flex: 1,
   },
@@ -582,7 +582,7 @@ const styles = StyleSheet.create({
     fontFamily: 'IBM Plex Mono',
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
   },
   adminLockCard: {
     backgroundColor: T.surface,
@@ -596,7 +596,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Outfit',
     fontSize: 13,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -699,7 +699,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter',
     fontSize: 13,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: '#1A1A1A',
   },
   idReal: {
     fontFamily: 'Inter',
@@ -781,7 +781,7 @@ const styles = StyleSheet.create({
   logVal: {
     fontFamily: 'Inter',
     fontSize: 11,
-    color: '#FFFFFF',
+    color: '#1A1A1A',
     fontWeight: '700',
   },
   monoText: {
@@ -797,7 +797,7 @@ const styles = StyleSheet.create({
   logCaption: {
     fontFamily: 'Inter',
     fontSize: 12.5,
-    color: '#E5E5EA',
+    color: '#1A1A1A',
     lineHeight: 18,
     marginBottom: 10,
   },
@@ -840,7 +840,7 @@ const styles = StyleSheet.create({
   reportText: {
     fontFamily: 'Inter',
     fontSize: 11,
-    color: '#E5E5EA',
+    color: '#1A1A1A',
     flex: 1,
   },
   logActions: {

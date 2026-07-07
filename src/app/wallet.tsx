@@ -15,11 +15,11 @@ import { supabase, mockDatabase } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
-  bg: '#0E0E10',
-  text: '#FFFFFF',
-  muted: '#8E8E93',
-  surface: '#1C1C1E',
-  border: '#2C2C2E',
+  bg: '#FFFFFF',
+  text: '#1A1A1A',
+  muted: '#8A8A8A',
+  surface: '#F5F5F5',
+  border: '#EAEAEA',
   success: '#30D158',
 };
 
