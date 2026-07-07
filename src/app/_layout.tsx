@@ -11,7 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Flame, Zap, Plus, Ticket, Terminal, Command } from 'lucide-react-native';
+import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -30,12 +30,17 @@ export const T = {
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
+  const [mounted, setMounted] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isDesktop = width >= 1024 && Platform.OS === 'web';
   const pathname = usePathname();
 
   useEffect(() => {
+    setMounted(true);
     SplashScreen.hideAsync().catch(() => {});
   }, []);
+
+  if (!mounted) return null;
 
   const buttons = [
     { name: 'Feed',   path: '/',        icon: Flame    },
@@ -133,32 +138,63 @@ export default function RootLayout() {
     );
   }
 
-  // Custom Mobile Layout
+  // Custom Mobile Layout with Collapsible Dashboard
   return (
     <ThemeProvider value={DefaultTheme}>
       <View style={styles.mobileContainer}>
+        {/* Mobile Top Bar */}
+        <View style={styles.mobileTopBar}>
+          <Pressable onPress={() => setIsMobileMenuOpen(true)}>
+            <Menu size={24} color={T.text} />
+          </Pressable>
+          <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+            <View style={styles.brandIconSmall}><Command size={14} color={'#FFFFFF'} /></View>
+            <Text style={styles.brandTitleSmall}>Spill</Text>
+          </View>
+          <View style={{width: 24}} />
+        </View>
+
         <View style={styles.mainContent}>
           <Slot />
         </View>
-        <View style={styles.mobileTabBar}>
-          {buttons.map((btn) => {
-            // Match pathname precisely (expo router maps '/' to '/index' sometimes or just '/')
-            const isFocused = pathname === btn.path || (pathname === '/index' && btn.path === '/');
-            const Icon = btn.icon;
-            return (
-              <Pressable
-                key={btn.path}
-                onPress={() => router.push(btn.path as any)}
-                style={styles.mobileTabBtn}
-              >
-                <Icon size={22} color={isFocused ? T.brand : T.muted} />
-                <Text style={[styles.mobileTabText, isFocused && { color: T.brand }]}>
-                  {btn.name}
-                </Text>
+
+        {isMobileMenuOpen && (
+          <View style={styles.mobileMenuOverlay}>
+            <Pressable style={styles.mobileMenuBackdrop} onPress={() => setIsMobileMenuOpen(false)} />
+            <View style={styles.mobileMenuSidebar}>
+              <Pressable onPress={() => setIsMobileMenuOpen(false)} style={{alignSelf: 'flex-end', marginBottom: 10}}>
+                <X size={24} color={T.text} />
               </Pressable>
-            );
-          })}
-        </View>
+              
+              <Text style={styles.menuLabel}>MENU</Text>
+              <View style={styles.navGroup}>
+                {buttons.map((btn) => {
+                  const isFocused = pathname === btn.path || (pathname === '/index' && btn.path === '/');
+                  const Icon = btn.icon;
+                  return (
+                    <Pressable
+                      key={btn.path}
+                      onPress={() => {
+                        setIsMobileMenuOpen(false);
+                        router.push(btn.path as any);
+                      }}
+                      style={({ pressed }) => [
+                        styles.sidebarBtn,
+                        isFocused && styles.sidebarBtnFocused,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Icon size={18} color={isFocused ? '#FFFFFF' : T.text} style={styles.iconSpacing} />
+                      <Text style={[styles.sidebarBtnText, isFocused ? styles.textActive : styles.textInactive, {fontSize: 18}]}>
+                        {btn.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        )}
       </View>
     </ThemeProvider>
   );
@@ -304,27 +340,51 @@ const styles = StyleSheet.create({
     color: '#8A8A8A',
     marginTop: 2,
   },
-  // ── Mobile Bottom Bar ─────────────────────────────────────────
-  mobileTabBar: {
+  // ── Mobile Elements ─────────────────────────────────────────
+  mobileTopBar: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 14,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#EAEAEA',
-    paddingVertical: 10,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EAEAEA',
   },
-  mobileTabBtn: {
-    alignItems: 'center',
+  brandIconSmall: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    backgroundColor: T.brand,
     justifyContent: 'center',
-    flex: 1,
+    alignItems: 'center',
   },
-  mobileTabText: {
-    fontFamily: 'Inter',
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#8A8A8A',
-    marginTop: 4,
+  brandTitleSmall: {
+    fontFamily: 'Outfit',
+    fontSize: 20,
+    fontWeight: '900',
+    color: T.text,
+    letterSpacing: -0.5,
+  },
+  mobileMenuOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    flexDirection: 'row',
+    zIndex: 999,
+  },
+  mobileMenuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  mobileMenuSidebar: {
+    width: '75%',
+    maxWidth: 300,
+    backgroundColor: '#FFFFFF',
+    height: '100%',
+    padding: Spacing.four,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 5,
   },
 });
