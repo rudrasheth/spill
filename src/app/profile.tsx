@@ -485,9 +485,11 @@ const styles = StyleSheet.create({
   statGrid: {
     flexDirection: 'row',
     gap: Spacing.two,
+    flexWrap: 'wrap',
   },
   gridBox: {
     flex: 1,
+    minWidth: '30%',
     backgroundColor: T.bg,
     borderWidth: 1,
     borderColor: T.border,

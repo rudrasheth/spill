@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ticket, ArrowUpRight, ArrowDownLeft, Flame, Info, TrendingDown } from 'lucide-react-native';
@@ -33,6 +34,8 @@ interface LedgerItem {
 export default function WalletScreen() {
   const [balance, setBalance] = useState(10);
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
 
   const loadWalletData = async () => {
     const me = mockDatabase.getCurrentUser();
@@ -136,7 +139,7 @@ export default function WalletScreen() {
 
         {/* Acquire Tokens packages */}
         <Text style={styles.sectionTitle}>ACQUIRE TOKENS</Text>
-        <View style={styles.packagesContainer}>
+        <View style={[styles.packagesContainer, isMobile && { flexDirection: 'column' }]}>
           {[
             { amount: 10, price: '$1.99', desc: 'LURKER BUNDLE' },
             { amount: 25, price: '$3.99', desc: 'INVESTIGATOR PACK' },

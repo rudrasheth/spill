@@ -158,7 +158,8 @@ export default function ChaosRoomsScreen() {
       </View>
 
       {/* Channel list selector */}
-      <View style={styles.channelRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, backgroundColor: T.bg, borderBottomWidth: 1, borderBottomColor: T.border }}>
+        <View style={styles.channelRow}>
         {CHANNELS.map((chan) => {
           const isSelected = activeChannel === chan.id;
           return (
@@ -175,7 +176,8 @@ export default function ChaosRoomsScreen() {
             </Pressable>
           );
         })}
-      </View>
+        </View>
+      </ScrollView>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -306,9 +308,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.two,
-    backgroundColor: T.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: T.border,
     gap: Spacing.two,
   },
   channelTag: {

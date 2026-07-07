@@ -143,7 +143,7 @@ export default function RootLayout() {
           tabBarActiveTintColor: T.brand,
           tabBarInactiveTintColor: T.muted,
           tabBarStyle: {
-            backgroundColor: '#FFFFFF',
+            backgroundColor: '#0E0E10',
             borderTopColor: T.border,
             borderTopWidth: 1,
             height: 62,

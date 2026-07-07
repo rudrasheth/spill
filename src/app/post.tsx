@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, Lock, ShieldCheck, ShieldAlert, Sparkles, Clock } from 'lucide-react-native';
@@ -38,6 +39,9 @@ export default function PostCreationScreen() {
   const [unlockPrice, setUnlockPrice] = useState(5);
   const [selectedMediaKey, setSelectedMediaKey] = useState<keyof typeof SEED_IMAGES>('classified_dossier');
   const [customImageUri, setCustomImageUri] = useState<string | null>(null);
+  
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
   
   // Expiry options: 6 hours, 24 hours, 48 hours, Never
   const [expiryOption, setExpiryOption] = useState<'6h' | '24h' | '48h' | 'never'>('24h');
