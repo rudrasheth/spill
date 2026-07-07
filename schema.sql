@@ -1,33 +1,35 @@
 -- =====================================================================
--- SPILL — SUPABASE DATABASE SCHEMA
+-- SPILL — SUPABASE DATABASE SCHEMA (FRIEND-GROUP SCALE)
 -- =====================================================================
 
 -- Enable UUID extension if not enabled
 create extension if not exists "uuid-ossp";
 
--- 1. USERS TABLE
+-- 1. USERS PROFILE TABLE
+-- Linked directly to Supabase Auth user accounts
 create table users (
-  id uuid primary key default gen_random_uuid(),
-  hashed_device_id text unique not null,
+  id uuid primary key references auth.users(id) on delete cascade,
+  alias text unique not null check (char_length(alias) >= 3),
+  real_identity text not null, -- Private email/phone used during OTP/invite verification
   token_balance integer not null default 10 check (token_balance >= 0),
-  cluster_id text,
   created_at timestamptz default now()
 );
 
--- 2. POSTS TABLE
+-- 2. SPILL POSTS TABLE
 create table posts (
   id uuid primary key default gen_random_uuid(),
-  hashed_author_id uuid references users(id) on delete set null,
-  media_url text not null,
+  author_id uuid references users(id) on delete cascade,
+  image_url text not null, -- Storage path or base64 data URI
   caption text,
   unlock_price integer not null default 5 check (unlock_price >= 0),
   is_blurred boolean not null default true,
-  redis_key text unique not null,
+  expires_at timestamptz, -- Scheduled expiry time (null means persistent)
   created_at timestamptz default now(),
   reported_count integer not null default 0
 );
 
--- 3. UNLOCKS (LEDGER) TABLE
+-- 3. UNLOCKS LEDGER TABLE
+-- Tracks which user unlocked which post
 create table unlocks (
   id uuid primary key default gen_random_uuid(),
   post_id uuid references posts(id) on delete cascade,
@@ -37,6 +39,7 @@ create table unlocks (
 );
 
 -- 4. REPORTS TABLE
+-- Tracks flags on posts; automatically increments reported_count
 create table reports (
   id uuid primary key default gen_random_uuid(),
   post_id uuid references posts(id) on delete cascade,
@@ -56,44 +59,48 @@ alter table unlocks enable row level security;
 alter table reports enable row level security;
 
 -- USERS POLICIES
-create policy "Users can read their own profile" 
+create policy "Public profile read access" 
   on users for select 
-  using (true); -- Everyone can view user records (necessary to read balance/profiles for posts/unlocks), or restrict to auth user
+  using (true); -- Required to map aliases and show balances for other feed/post authors
 
 create policy "Users can insert their own profile" 
   on users for insert 
-  with check (true);
+  with check (auth.uid() = id);
 
 create policy "Users can update their own profile"
   on users for update
-  using (true);
+  using (auth.uid() = id);
 
 -- POSTS POLICIES
-create policy "Anyone can read posts" 
+create policy "Anyone can read non-flagged active posts" 
   on posts for select 
-  using (reported_count < 1); -- Hide posts immediately if they have been reported
+  using (reported_count < 1 and (expires_at is null or expires_at > now()));
 
-create policy "Users can insert posts" 
+create policy "Users can insert their own posts" 
   on posts for insert 
-  with check (true);
+  with check (auth.uid() = author_id);
+
+create policy "Authors can delete/modify their own posts"
+  on posts for delete
+  using (auth.uid() = author_id);
 
 -- UNLOCKS POLICIES
-create policy "Users can read their own unlocks" 
+create policy "Users can read all unlocks" 
   on unlocks for select 
   using (true);
 
-create policy "Users can insert unlocks" 
+create policy "Users can insert their own unlocks" 
   on unlocks for insert 
-  with check (true);
+  with check (auth.uid() = unlocker_id);
 
 -- REPORTS POLICIES
-create policy "Users can insert reports" 
+create policy "Users can insert abuse reports" 
   on reports for insert 
-  with check (true);
+  with check (auth.uid() = reporter_id);
 
-create policy "Admins can read reports" 
+create policy "Operators can read reports" 
   on reports for select 
-  using (true);
+  using (true); -- Restrict to admin roles in real production if needed
 
 -- =====================================================================
 -- ATOMIC UNLOCK POST TRANSACTION (RPC)
@@ -106,7 +113,7 @@ declare
   v_author uuid;
   v_already_unlocked boolean;
 begin
-  -- Check if already unlocked
+  -- Check if already unlocked by this user
   select exists(
     select 1 from unlocks where post_id = p_post_id and unlocker_id = p_user_id
   ) into v_already_unlocked;
@@ -115,17 +122,16 @@ begin
     return;
   end if;
 
-  -- Lock post row to avoid race conditions
-  select unlock_price, hashed_author_id into v_price, v_author
+  -- Lock post row to prevent race conditions during write
+  select unlock_price, author_id into v_price, v_author
   from posts where id = p_post_id for update;
 
   if not found then
     raise exception 'Post not found';
   end if;
 
-  -- Check if user is trying to unlock their own post
+  -- Author does not need to pay to unlock their own post
   if v_author = p_user_id then
-    -- Author does not need to unlock their own post
     insert into unlocks (post_id, unlocker_id) values (p_post_id, p_user_id);
     return;
   end if;
@@ -138,18 +144,22 @@ begin
     raise exception 'Insufficient balance';
   end if;
 
-  -- Add tokens to poster (60% i.e. 3/5, or v_price * 3 / 5)
+  -- Add 60% of tokens to author (3/5)
   if v_author is not null then
     update users set token_balance = token_balance + (v_price * 3 / 5)
     where id = v_author;
   end if;
 
-  -- Record the unlock
+  -- Record the unlock transaction in history
   insert into unlocks (post_id, unlocker_id) values (p_post_id, p_user_id);
 end;
 $$ language plpgsql;
 
--- Trigger to increment reported_count and auto-hide posts
+-- =====================================================================
+-- REPORT AUTOMATION TRIGGERS
+-- =====================================================================
+
+-- Automatically hide post on report
 create or replace function increment_post_report()
 returns trigger as $$
 begin

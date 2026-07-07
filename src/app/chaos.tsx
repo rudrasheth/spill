@@ -6,25 +6,23 @@ import {
   FlatList,
   TextInput,
   Pressable,
-  ScrollView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Send, Users, ShieldAlert } from 'lucide-react-native';
+import { Send, Users, ShieldAlert, Hash } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { mockDatabase } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
-  bg: '#FFFFFF',
-  text: '#1A1A1A',
-  muted: '#8A8A8A',
-  surface: '#F5F5F5',
-  glass: '#FFFFFF',
-  glassMedium: '#F5F5F5',
-  border: '#EAEAEA',
+  bg: '#0E0E10',
+  text: '#FFFFFF',
+  muted: '#8E8E93',
+  surface: '#1C1C1E',
+  border: '#2C2C2E',
+  success: '#30D158',
 };
 
 interface ChatMessage {
@@ -35,132 +33,148 @@ interface ChatMessage {
   isMe: boolean;
 }
 
+const CHANNELS = [
+  { id: 'general-spill', name: 'general-spill', desc: 'Main gossip channel for the group.' },
+  { id: 'crypto-rumors', name: 'crypto-rumors', desc: 'Leaks and rumors from the web3 space.' },
+  { id: 'vc-funding-drama', name: 'vc-funding-drama', desc: 'Downrounds, valuation cuts, pitch decks.' },
+];
+
 const ROOM_CONVERSATIONS: Record<string, string[]> = {
-  Instigators: [
+  'general-spill': [
     "Did anyone see the CEO of that fintech last night? Absolutely wasted.",
-    "I heard they are raising a downround. Valuations are down 80%.",
+    "Heard someone is leaving the marketing team next week.",
     "Spill the tea on the QA layoffs — who got cut?",
-    "The co-founder is apparently locked out of the Github org.",
+    "Co-founder is apparently locked out of the Github org.",
     "Posting the pitch deck screenshot later. Get your Receipts ready.",
   ],
-  Lurkers: [
-    "I'm just here for the drama.",
-    "Anyone got the Slack announcement screenshot?",
-    "Receipt balance is low — need to submit some gossip soon.",
+  'crypto-rumors': [
+    "Rumor has it a major L2 is planning an unannounced token airdrop.",
+    "A certain web3 VC had their telegram hacked yesterday.",
+    "Anyone got the Slack announcement screenshot from the protocol team?",
     "Watching this thread in silence...",
-    "Worth spending 8 receipts to unlock the AI power grid post?",
+    "Heard that the treasury has less than 6 months of runway left.",
   ],
-  Skeptics: [
+  'vc-funding-drama': [
     "Are we sure that VC story is even real? Sounds made up.",
-    "No way a nuclear barge operator is talking to them, that's sci-fi.",
+    "Valuations are down 80% across the board. Downrounds incoming.",
     "Probably fake gossip posted to farm tokens.",
     "Who verified this screenshot? Could easily be edited in DevTools.",
-    "Don't trust any gossip under 5 receipts unlock price.",
+    "CEO is frantically pitching angels to survive the month.",
   ],
 };
 
+const BOT_ALIASES = ['@GossipGirl', '@TeaSpiller_02', '@RumorMill_99', '@SiliconInsider', '@SpyX'];
+
 export default function ChaosRoomsScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [activeChannel, setActiveChannel] = useState(CHANNELS[0].id);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [activeUsers, setActiveUsers] = useState(12);
   const flatListRef = useRef<FlatList>(null);
 
-  const [behaviorVector, setBehaviorVector] = useState({
-    dwellTime: 42, unlockFreq: 0.7, reportRatio: 0.1, postCount: 2,
-  });
-
-  const loadUserData = async () => {
+  const loadUserData = () => {
     const me = mockDatabase.getCurrentUser();
     if (me) {
       setCurrentUser(me);
-      const posts = mockDatabase.getPosts();
-      const unlocks = mockDatabase.getUnlocks();
-      const reports = mockDatabase.getReports();
-      const myUnlocks = unlocks.filter(u => u.unlocker_id === me.id).length;
-      const myReports = reports.filter(r => r.reporter_id === me.id).length;
-      const myPosts = posts.filter(p => p.hashed_author_id === me.id).length;
 
-      setBehaviorVector({
-        dwellTime: 25 + myUnlocks * 5 + myPosts * 10,
-        unlockFreq: posts.length > 0 ? Number((myUnlocks / posts.length).toFixed(2)) : 0,
-        reportRatio: myUnlocks > 0 ? Number((myReports / myUnlocks).toFixed(2)) : 0,
-        postCount: myPosts,
+      // Seed initial messages for this channel
+      const initialTexts = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
+      const seedMsgs: ChatMessage[] = initialTexts.map((text, index) => {
+        const randBot = BOT_ALIASES[index % BOT_ALIASES.length];
+        return {
+          id: `msg-seed-${index}-${activeChannel}`,
+          sender: randBot,
+          text,
+          timestamp: new Date(Date.now() - (initialTexts.length - index) * 120000)
+            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isMe: false,
+        };
       });
-
-      const currentRoom = me.cluster_id || 'Skeptics';
-      const initialTexts = ROOM_CONVERSATIONS[currentRoom] || ROOM_CONVERSATIONS.Skeptics;
-      const seedMsgs: ChatMessage[] = initialTexts.map((text, index) => ({
-        id: `msg-seed-${index}`,
-        sender: `${currentRoom.substring(0, 3).toUpperCase()}_ANON_${200 + index * 17}`,
-        text,
-        timestamp: new Date(Date.now() - (initialTexts.length - index) * 120000)
-          .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        isMe: false,
-      }));
       setMessages(seedMsgs);
-      setActiveUsers(Math.floor(Math.random() * 20) + 10);
+      setActiveUsers(Math.floor(Math.random() * 8) + 5);
     }
   };
 
   useEffect(() => {
     loadUserData();
-    const interval = setInterval(() => {
-      const me = mockDatabase.getCurrentUser();
-      if (me && currentUser && me.cluster_id !== currentUser.cluster_id) loadUserData();
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [currentUser?.cluster_id]);
+  }, [activeChannel]);
 
+  // Simulate active background chatters
   useEffect(() => {
     const chatSimulator = setInterval(() => {
       if (!currentUser) return;
-      const room = currentUser.cluster_id || 'Skeptics';
-      const pool = ROOM_CONVERSATIONS[room] || ROOM_CONVERSATIONS.Skeptics;
+      const pool = ROOM_CONVERSATIONS[activeChannel] || ROOM_CONVERSATIONS['general-spill'];
       const randomText = pool[Math.floor(Math.random() * pool.length)];
+      const randomBot = BOT_ALIASES[Math.floor(Math.random() * BOT_ALIASES.length)];
+      
       const newMsg: ChatMessage = {
         id: `sim-${Date.now()}`,
-        sender: `${room.substring(0, 3).toUpperCase()}_ANON_${Math.floor(Math.random() * 800) + 100}`,
+        sender: randomBot,
         text: randomText,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         isMe: false,
       };
       setMessages(prev => [...prev, newMsg]);
-      setActiveUsers(prev => Math.max(5, prev + (Math.random() > 0.5 ? 1 : -1)));
-    }, 12000);
+      setActiveUsers(prev => Math.max(3, prev + (Math.random() > 0.5 ? 1 : -1)));
+    }, 15000);
+
     return () => clearInterval(chatSimulator);
-  }, [currentUser]);
+  }, [currentUser, activeChannel]);
 
   const handleSendMessage = () => {
     if (!inputText.trim() || !currentUser) return;
-    setMessages(prev => [...prev, {
+    
+    const newMsg: ChatMessage = {
       id: `my-${Date.now()}`,
-      sender: 'YOU (ANON)',
+      sender: `@${currentUser.alias}`,
       text: inputText.trim(),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       isMe: true,
-    }]);
+    };
+
+    setMessages(prev => [...prev, newMsg]);
     setInputText('');
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
-  const currentRoomName = currentUser?.cluster_id || 'Skeptics';
+  const activeChanInfo = CHANNELS.find(c => c.id === activeChannel) || CHANNELS[0];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Header */}
+      {/* Upper header */}
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <View style={styles.pulseDot} />
           <View>
-            <Text style={styles.roomName}>CHAOS: {currentRoomName.toUpperCase()}</Text>
-            <Text style={styles.subtext}>TEMP BEHAVIORAL CLUSTER</Text>
+            <Text style={styles.roomName}>#{activeChanInfo.name}</Text>
+            <Text style={styles.subtext}>{activeChanInfo.desc}</Text>
           </View>
         </View>
         <View style={styles.roomBadge}>
-          <Users size={12} color="#1A1A1A" style={{ marginRight: 4 }} />
+          <Users size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
           <Text style={styles.badgeText}>{activeUsers} ONLINE</Text>
         </View>
+      </View>
+
+      {/* Channel list selector */}
+      <View style={styles.channelRow}>
+        {CHANNELS.map((chan) => {
+          const isSelected = activeChannel === chan.id;
+          return (
+            <Pressable
+              key={chan.id}
+              style={[styles.channelTag, isSelected && styles.channelTagActive]}
+              onPress={() => setActiveChannel(chan.id)}
+              id={`btn-channel-${chan.id}`}
+            >
+              <Hash size={12} color={isSelected ? '#FFFFFF' : T.muted} style={{ marginRight: 4 }} />
+              <Text style={[styles.channelTagText, isSelected && styles.channelTagTextActive]}>
+                {chan.name}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <KeyboardAvoidingView
@@ -169,45 +183,32 @@ export default function ChaosRoomsScreen() {
         keyboardVerticalOffset={80}
       >
         <View style={{ flex: 1, justifyContent: 'space-between' }}>
-
-          {/* Stats */}
-          <View style={styles.statsBanner}>
-            {[
-              { label: 'DWELL TIME', value: `${behaviorVector.dwellTime}s` },
-              { label: 'UNLOCK RATIO', value: `${Math.round(behaviorVector.unlockFreq * 100)}%` },
-              { label: 'REPORTS/UNLOCK', value: `${behaviorVector.reportRatio}` },
-              { label: 'POST FREQ', value: `${behaviorVector.postCount}` },
-            ].map(stat => (
-              <View key={stat.label} style={styles.statBox}>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-                <Text style={styles.statValue}>{stat.value}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Disclaimer */}
+          
+          {/* Security Banner */}
           <View style={styles.disclaimerRow}>
-            <ShieldAlert size={11} color={T.brand} />
+            <ShieldAlert size={12} color={T.brand} style={{ marginRight: 6 }} />
             <Text style={styles.disclaimerText}>
-              Messages encrypted · auto-expire · Screenshots prohibited
+              Chaos rooms chat history is not persistent and automatically auto-expires.
             </Text>
           </View>
 
-          {/* Messages */}
+          {/* Messages Feed */}
           <FlatList
             ref={flatListRef}
             data={messages}
             keyExtractor={item => item.id}
             renderItem={({ item }) => (
               <View style={[styles.messageWrap, item.isMe && styles.messageWrapMe]}>
-                <View style={styles.messageMeta}>
+                <View style={[styles.messageHeaderRow, item.isMe && styles.messageHeaderRowMe]}>
                   <Text style={[styles.senderName, item.isMe && styles.senderNameMe]}>
                     {item.sender}
                   </Text>
                   <Text style={styles.messageTime}>{item.timestamp}</Text>
                 </View>
                 <View style={[styles.bubble, item.isMe && styles.bubbleMe]}>
-                  <Text style={styles.bubbleText}>{item.text}</Text>
+                  <Text style={[styles.bubbleText, item.isMe && styles.bubbleTextMe]}>
+                    {item.text}
+                  </Text>
                 </View>
               </View>
             )}
@@ -216,17 +217,25 @@ export default function ChaosRoomsScreen() {
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
 
-          {/* Input */}
+          {/* Chat Input row */}
           <View style={styles.inputRow}>
             <TextInput
               style={styles.chatInput}
-              placeholder={`Message #${currentRoomName.toLowerCase()}...`}
-              placeholderTextColor={T.textMuted}
+              placeholder={`Message #${activeChanInfo.name}...`}
+              placeholderTextColor={T.muted}
               value={inputText}
               onChangeText={setInputText}
               onSubmitEditing={handleSendMessage}
+              id="input-chat-message"
             />
-            <Pressable style={styles.sendBtn} onPress={handleSendMessage}>
+            <Pressable 
+              style={({ pressed }) => [
+                styles.sendBtn,
+                pressed && styles.pressed,
+              ]} 
+              onPress={handleSendMessage}
+              id="btn-chat-send"
+            >
               <Send size={16} color="#FFFFFF" />
             </Pressable>
           </View>
@@ -240,115 +249,189 @@ export default function ChaosRoomsScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.bg,
     width: '100%',
   },
-
   header: {
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.four,
     paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.bg,
     borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    borderBottomColor: T.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
+    flex: 1,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   pulseDot: {
-    width: 10, height: 10, borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: T.brand,
   },
   roomName: {
     fontFamily: 'Outfit',
-    fontSize: 17, fontWeight: '800', letterSpacing: 0,
-    color: '#1A1A1A',
+    fontSize: 16,
+    fontWeight: '900',
+    color: T.text,
   },
   subtext: {
-    fontFamily: 'IBM Plex Mono',
-    fontSize: 8, color: T.brand, fontWeight: '700', letterSpacing: 1,
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: T.muted,
+    marginTop: 2,
   },
   roomBadge: {
-    backgroundColor: '#F5F5F5',
-    paddingVertical: 4, paddingHorizontal: 10,
-    borderRadius: 20, flexDirection: 'row', alignItems: 'center',
-  },
-  badgeText: { fontFamily: 'IBM Plex Mono', fontSize: 10, fontWeight: 'bold', color: '#1A1A1A' },
-
-  statsBanner: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: T.border,
   },
-  statBox: { alignItems: 'center' },
-  statLabel: { fontFamily: 'IBM Plex Mono', fontSize: 8, color: T.muted, fontWeight: '600', letterSpacing: 1 },
-  statValue: { fontFamily: 'IBM Plex Mono', fontSize: 13, color: '#1A1A1A', fontWeight: 'bold', marginTop: 2 },
-
+  badgeText: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  channelRow: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    backgroundColor: T.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+    gap: Spacing.two,
+  },
+  channelTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  channelTagActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  channelTagText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: '600',
+    color: T.muted,
+  },
+  channelTagTextActive: {
+    color: '#FFFFFF',
+  },
   disclaimerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: 8,
-    backgroundColor: '#F5F5F5',
-    borderBottomWidth: 1,
-    borderBottomColor: '#EAEAEA',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 59, 92, 0.05)',
   },
-  disclaimerText: { fontFamily: 'Inter', fontSize: 11, color: T.brand, flex: 1, fontWeight: '600' },
-
-  chatList: { padding: Spacing.three, gap: 14 },
-  messageWrap: { maxWidth: '80%', alignSelf: 'flex-start' },
-  messageWrapMe: { alignSelf: 'flex-end' },
-  messageMeta: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 4 },
-  senderName: { fontFamily: 'IBM Plex Mono', fontSize: 10, fontWeight: 'bold', color: T.muted },
-  senderNameMe: { color: T.brand },
-  messageTime: { fontFamily: 'IBM Plex Mono', fontSize: 8, color: T.muted },
+  disclaimerText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: '#FF3B5C',
+    flex: 1,
+  },
+  chatList: {
+    padding: Spacing.four,
+    gap: Spacing.three,
+  },
+  messageWrap: {
+    alignItems: 'flex-start',
+    width: '100%',
+  },
+  messageWrapMe: {
+    alignItems: 'flex-end',
+  },
+  messageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  messageHeaderRowMe: {
+    flexDirection: 'row-reverse',
+  },
+  senderName: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#E5E5EA',
+  },
+  senderNameMe: {
+    color: T.brand,
+  },
+  messageTime: {
+    fontFamily: 'Inter',
+    fontSize: 10,
+    color: T.muted,
+  },
   bubble: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
+    backgroundColor: T.surface,
     borderRadius: 12,
-    borderTopLeftRadius: 2,
-    padding: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    maxWidth: '80%',
+    borderWidth: 1,
+    borderColor: T.border,
   },
   bubbleMe: {
-    backgroundColor: '#F5F5F5',
-    borderColor: '#F5F5F5',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 2,
+    backgroundColor: T.brand,
+    borderColor: T.brand,
   },
-  bubbleText: { fontFamily: 'Inter', fontSize: 13, color: '#1A1A1A', lineHeight: 18 },
-
+  bubbleText: {
+    fontFamily: 'Inter',
+    fontSize: 13.5,
+    lineHeight: 18,
+    color: '#FFFFFF',
+  },
+  bubbleTextMe: {
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
   inputRow: {
     flexDirection: 'row',
     padding: Spacing.three,
-    paddingBottom: Platform.OS === 'web' ? Spacing.three : Spacing.five,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.bg,
     borderTopWidth: 1,
-    borderTopColor: '#F5F5F5',
-    gap: 10,
-    alignItems: 'center',
+    borderTopColor: T.border,
+    gap: Spacing.two,
   },
   chatInput: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: T.surface,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
-    color: '#1A1A1A',
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderColor: T.border,
+    color: T.text,
+    paddingHorizontal: 12,
     height: 44,
     fontFamily: 'Inter',
-    fontSize: 14,
   },
   sendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     backgroundColor: T.brand,
-    width: 44, height: 44,
-    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  pressed: {
+    opacity: 0.85,
   },
 });

@@ -9,12 +9,14 @@ import {
   StyleSheet,
   useWindowDimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Flame, Zap, Plus, Ticket, Terminal, Command } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Design tokens — one place, used everywhere
 export const T = {
@@ -32,6 +34,10 @@ export default function RootLayout() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024 && Platform.OS === 'web';
   const pathname = usePathname();
+
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   const buttons = [
     { name: 'Feed',   path: '/',        icon: Flame    },
@@ -101,14 +107,14 @@ export default function RootLayout() {
       <View style={styles.agentRow}>
         <View style={styles.agentAvatar} />
         <View>
-          <Text style={styles.agentName}>Agent #4F92</Text>
+          <Text style={styles.agentName}>TeaSpiller_02</Text>
           <Text style={styles.agentStats}>Instigator • 2.4k RCPT</Text>
         </View>
       </View>
       <View style={styles.agentRow}>
         <View style={styles.agentAvatar} />
         <View>
-          <Text style={styles.agentName}>Agent #9A1B</Text>
+          <Text style={styles.agentName}>RumorMill_99</Text>
           <Text style={styles.agentStats}>Lurker • 890 RCPT</Text>
         </View>
       </View>

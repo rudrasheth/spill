@@ -4,15 +4,23 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  useColorScheme,
   ScrollView,
-  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ticket, ArrowUpRight, ArrowDownLeft, Flame, Info, TrendingDown } from 'lucide-react-native';
 
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { supabase, mockDatabase } from '@/lib/supabase';
+
+const T = {
+  brand: '#FF3B5C',
+  bg: '#0E0E10',
+  text: '#FFFFFF',
+  muted: '#8E8E93',
+  surface: '#1C1C1E',
+  border: '#2C2C2E',
+  success: '#30D158',
+};
 
 interface LedgerItem {
   id: string;
@@ -23,9 +31,6 @@ interface LedgerItem {
 }
 
 export default function WalletScreen() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'dark'];
-
   const [balance, setBalance] = useState(10);
   const [ledger, setLedger] = useState<LedgerItem[]>([]);
 
@@ -34,10 +39,9 @@ export default function WalletScreen() {
     if (me) {
       setBalance(me.token_balance);
 
-      // Construct a dynamic transaction ledger from unlocks, posts, and purchases
       const unlocks = mockDatabase.getUnlocks().filter(u => u.unlocker_id === me.id);
       const posts = mockDatabase.getPosts();
-      const myPosts = posts.filter(p => p.hashed_author_id === me.id);
+      const myPosts = posts.filter(p => p.author_id === me.id);
 
       const items: LedgerItem[] = [];
 
@@ -45,11 +49,13 @@ export default function WalletScreen() {
       unlocks.forEach((un) => {
         const post = posts.find(p => p.id === un.post_id);
         const cost = post ? post.unlock_price : 5;
+        const author = mockDatabase.getUsers().find(u => u.id === post?.author_id);
+        const authorAlias = author ? `@${author.alias}` : '@Unknown';
         items.push({
           id: un.id,
           type: 'spend',
           amount: cost,
-          label: `Unlocked Gossip: ${post?.id || 'Unknown'}`,
+          label: `Unlocked Spill from ${authorAlias}`,
           timestamp: new Date(un.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
         });
       });
@@ -59,13 +65,13 @@ export default function WalletScreen() {
         items.push({
           id: post.id,
           type: 'earn',
-          amount: 3, // posting reward
-          label: `Submitted Gossip Proof: ${post.id}`,
+          amount: 3, // Posting reward
+          label: `Earned: Shared Spill Proof`,
           timestamp: new Date(post.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
         });
       });
 
-      // Mock starting purchase
+      // Welcome Grant
       items.push({
         id: 'init-purchase',
         type: 'purchase',
@@ -82,8 +88,7 @@ export default function WalletScreen() {
 
   useEffect(() => {
     loadWalletData();
-    // Poll balance and ledger
-    const interval = setInterval(loadWalletData, 2000);
+    const interval = setInterval(loadWalletData, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -92,7 +97,7 @@ export default function WalletScreen() {
     if (me) {
       mockDatabase.grantTokens(me.id, amount);
       loadWalletData();
-      alert(`Successfully loaded +${amount} Receipts!`);
+      alert(`Successfully loaded +${amount} Tokens!`);
     }
   };
 
@@ -103,8 +108,8 @@ export default function WalletScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>RECEIPTS WALLET</Text>
-          <Text style={styles.subtitle}>LEDGER & TRANSACTION SINK</Text>
+          <Text style={styles.subtitle}>BALANCE & TRANSACTION SINK</Text>
+          <Text style={styles.title}>Token Wallet</Text>
         </View>
 
         {/* Balance Card */}
@@ -118,29 +123,33 @@ export default function WalletScreen() {
           <View style={styles.balanceRow}>
             <Ticket size={36} color="#E8B23D" />
             <Text style={styles.balanceValue}>{balance}</Text>
-            <Text style={styles.tokenUnit}>RCPT</Text>
+            <Text style={styles.tokenUnit}>TK</Text>
           </View>
 
           <View style={styles.sinkBanner}>
-            <TrendingDown size={14} color="#C4362E" />
+            <TrendingDown size={14} color="#FF3B5C" style={{ marginRight: 6 }} />
             <Text style={styles.sinkText}>
-              DEFLATIONARY SINK ACTIVE: Reader pays 5, poster gets 3, platform burns 2 tokens.
+              DEFLATIONARY SINK: Reader pays unlock cost, author receives 60% reward, remainder burned.
             </Text>
           </View>
         </View>
 
-        {/* Purchase Packages */}
-        <Text style={styles.sectionTitle}>ACQUIRE RECEIPTS</Text>
+        {/* Acquire Tokens packages */}
+        <Text style={styles.sectionTitle}>ACQUIRE TOKENS</Text>
         <View style={styles.packagesContainer}>
           {[
             { amount: 10, price: '$1.99', desc: 'LURKER BUNDLE' },
             { amount: 25, price: '$3.99', desc: 'INVESTIGATOR PACK' },
-            { amount: 60, price: '$7.99', desc: 'CHAOS MAKER SPEC' },
+            { amount: 60, price: '$7.99', desc: 'GOSSIP MAKER SPEC' },
           ].map((pkg, idx) => (
             <Pressable
               key={idx}
-              style={styles.packageCard}
+              style={({ pressed }) => [
+                styles.packageCard,
+                pressed && styles.pressed,
+              ]}
               onPress={() => handleBuyTokens(pkg.amount)}
+              id={`btn-buy-package-${pkg.amount}`}
             >
               <View style={styles.packageHeader}>
                 <Ticket size={18} color="#E8B23D" />
@@ -169,9 +178,9 @@ export default function WalletScreen() {
                   item.type === 'spend' ? styles.spendIcon : styles.earnIcon
                 ]}>
                   {item.type === 'spend' ? (
-                    <ArrowUpRight size={16} color="#C4362E" />
+                    <ArrowUpRight size={16} color="#FF3B5C" />
                   ) : (
-                    <ArrowDownLeft size={16} color="#2E7D6B" />
+                    <ArrowDownLeft size={16} color="#30D158" />
                   )}
                 </View>
                 <View style={styles.ledgerDetails}>
@@ -194,138 +203,245 @@ export default function WalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: T.bg },
   scrollContent: {
     padding: Spacing.four,
     paddingBottom: 80,
-    width: '100%',
-    flexGrow: 1,
   },
-  header: { marginBottom: Spacing.three },
+  header: {
+    marginBottom: Spacing.four,
+  },
   title: {
-    fontFamily: 'Outfit', fontSize: 26, fontWeight: '900',
-    color: '#1A1A2E', letterSpacing: -0.5,
+    fontFamily: 'Outfit',
+    fontSize: 24,
+    fontWeight: '900',
+    color: T.text,
   },
   subtitle: {
-    fontFamily: 'IBM Plex Mono', fontSize: 9, color: '#FF3B5C',
-    fontWeight: 'bold', letterSpacing: 1, marginTop: 2,
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    color: T.brand,
+    fontWeight: '700',
+    letterSpacing: 2,
   },
-
-  // Balance Card
   balanceCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
+    borderColor: T.border,
     borderRadius: 16,
-    padding: Spacing.four,
-    marginBottom: Spacing.four,
+    padding: Spacing.five,
     position: 'relative',
     overflow: 'hidden',
+    marginBottom: Spacing.five,
   },
   ticketCornerTopLeft: {
-    position: 'absolute', top: -12, left: -12,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'transparent',
+    position: 'absolute',
+    top: -12,
+    left: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
   },
   ticketCornerTopRight: {
-    position: 'absolute', top: -12, right: -12,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'transparent',
+    position: 'absolute',
+    top: -12,
+    right: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
   },
   ticketCornerBottomLeft: {
-    position: 'absolute', bottom: -12, left: -12,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'transparent',
+    position: 'absolute',
+    bottom: -12,
+    left: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
   },
   ticketCornerBottomRight: {
-    position: 'absolute', bottom: -12, right: -12,
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'transparent',
+    position: 'absolute',
+    bottom: -12,
+    right: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
   },
   balanceLabel: {
-    fontFamily: 'IBM Plex Mono', fontSize: 10, color: 'rgba(26,26,46,0.55)',
-    fontWeight: 'bold', letterSpacing: 2, textAlign: 'center', marginBottom: 8,
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    fontWeight: '700',
+    color: T.muted,
+    letterSpacing: 2,
+    marginBottom: 6,
   },
   balanceRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 12, marginVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: Spacing.four,
   },
   balanceValue: {
-    fontFamily: 'IBM Plex Mono', fontSize: 52, fontWeight: '900', color: '#1A1A2E',
+    fontFamily: 'Outfit',
+    fontSize: 44,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    lineHeight: 50,
   },
   tokenUnit: {
-    fontFamily: 'Outfit', fontSize: 18, color: '#1A1A2E',
-    fontWeight: '900', transform: [{ translateY: 10 }],
+    fontFamily: 'Inter',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#E8B23D',
+    marginTop: 14,
   },
   sinkBanner: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1, borderColor: '#EAEAEA',
-    borderStyle: 'dashed', padding: 10, marginTop: Spacing.two, borderRadius: 8, gap: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 59, 92, 0.05)',
+    padding: Spacing.three,
+    borderRadius: 10,
   },
   sinkText: {
-    fontFamily: 'Inter', fontSize: 10, color: '#1A1A1A', flex: 1, lineHeight: 14, fontWeight: '600',
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: '#FF3B5C',
+    flex: 1,
+    lineHeight: 16,
   },
   sectionTitle: {
-    fontFamily: 'IBM Plex Mono', fontSize: 9, color: 'rgba(26,26,46,0.6)',
-    fontWeight: 'bold', marginBottom: 10, marginTop: Spacing.four, letterSpacing: 2,
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 10,
+    fontWeight: '700',
+    color: T.brand,
+    letterSpacing: 1.5,
+    marginBottom: Spacing.three,
   },
-
   packagesContainer: {
-    flexDirection: 'row', gap: 12, marginBottom: Spacing.three,
+    flexDirection: 'row',
+    gap: Spacing.three,
+    marginBottom: Spacing.five,
   },
   packageCard: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
-    borderRadius: 14,
+    borderColor: T.border,
+    borderRadius: 12,
     padding: Spacing.three,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 120,
   },
-  packageHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  packageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
   packageAmount: {
-    fontFamily: 'IBM Plex Mono', fontSize: 18, fontWeight: 'bold', color: '#1A1A2E',
+    fontFamily: 'Outfit',
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   packageDesc: {
-    fontFamily: 'IBM Plex Mono', fontSize: 8, color: '#8A8A8A',
-    fontWeight: 'bold', textAlign: 'center', marginVertical: 8, letterSpacing: 1,
+    fontFamily: 'Inter',
+    fontSize: 9,
+    color: T.muted,
+    textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '700',
   },
   buyBtn: {
-    backgroundColor: '#FF3B5C', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
+    backgroundColor: T.brand,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    width: '100%',
+    alignItems: 'center',
   },
   buyBtnText: {
-    fontFamily: 'Outfit', fontSize: 11, fontWeight: '800', color: '#FFFFFF',
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
-
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#EAEAEA',
-    padding: Spacing.four, borderRadius: 12, alignItems: 'center',
-  },
-  emptyText: { fontFamily: 'Inter', fontSize: 12, color: '#8A8A8A' },
   ledgerList: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1, borderColor: '#EAEAEA',
-    borderRadius: 12, overflow: 'hidden',
+    gap: Spacing.two,
   },
   ledgerItem: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
     padding: Spacing.three,
-    borderBottomWidth: 1, borderBottomColor: '#F5F5F5',
   },
   ledgerIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  spendIcon: { backgroundColor: '#F5F5F5' },
-  earnIcon:  { backgroundColor: '#F5F5F5' },
-  ledgerDetails: { flex: 1 },
-  ledgerLabel: { fontFamily: 'Inter', fontSize: 13, fontWeight: '600', color: '#1A1A1A' },
-  ledgerTime:  { fontFamily: 'IBM Plex Mono', fontSize: 9, color: '#8A8A8A', marginTop: 2 },
-  ledgerAmount: { fontFamily: 'IBM Plex Mono', fontSize: 14, fontWeight: 'bold' },
-  spendAmountText: { color: '#1A1A1A' },
-  earnAmountText:  { color: '#1A1A1A' },
+  spendIcon: {
+    backgroundColor: 'rgba(255, 59, 92, 0.05)',
+  },
+  earnIcon: {
+    backgroundColor: 'rgba(48, 209, 88, 0.05)',
+  },
+  ledgerDetails: {
+    flex: 1,
+  },
+  ledgerLabel: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  ledgerTime: {
+    fontFamily: 'Inter',
+    fontSize: 10,
+    color: T.muted,
+    marginTop: 2,
+  },
+  ledgerAmount: {
+    fontFamily: 'Outfit',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  spendAmountText: {
+    color: '#FF3B5C',
+  },
+  earnAmountText: {
+    color: '#30D158',
+  },
+  emptyCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: Spacing.five,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    color: T.muted,
+  },
+  pressed: {
+    opacity: 0.85,
+  },
 });

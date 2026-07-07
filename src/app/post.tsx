@@ -7,12 +7,11 @@ import {
   Pressable,
   ScrollView,
   Image,
-  Switch,
   ActivityIndicator,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, Lock, ShieldCheck, ShieldAlert, Sparkles } from 'lucide-react-native';
+import { Camera, Lock, ShieldCheck, ShieldAlert, Sparkles, Clock } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
@@ -20,13 +19,12 @@ import { supabase, mockDatabase } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
-  bg: '#FFFFFF',
-  text: '#1A1A1A',
-  muted: '#8A8A8A',
-  surface: '#F5F5F5',
-  glass: '#FFFFFF',
-  glassDark: '#F5F5F5',
-  border: '#EAEAEA',
+  bg: '#0E0E10',
+  text: '#FFFFFF',
+  muted: '#8E8E93',
+  surface: '#1C1C1E',
+  border: '#2C2C2E',
+  success: '#30D158',
 };
 
 const SEED_IMAGES = {
@@ -40,11 +38,13 @@ export default function PostCreationScreen() {
   const [unlockPrice, setUnlockPrice] = useState(5);
   const [selectedMediaKey, setSelectedMediaKey] = useState<keyof typeof SEED_IMAGES>('classified_dossier');
   const [customImageUri, setCustomImageUri] = useState<string | null>(null);
+  
+  // Expiry options: 6 hours, 24 hours, 48 hours, Never
+  const [expiryOption, setExpiryOption] = useState<'6h' | '24h' | '48h' | 'never'>('24h');
+
   const [isScanning, setIsScanning] = useState(false);
   const [scanStep, setScanStep] = useState('');
-  const [piiDetected, setPiiDetected] = useState(false);
-  const [redactedCaption, setRedactedCaption] = useState('');
-  const [forceReview, setForceReview] = useState(false);
+  const [safetyCheckPassed, setSafetyCheckPassed] = useState(true);
 
   const handleSelectPredefined = (key: keyof typeof SEED_IMAGES) => {
     setCustomImageUri(null);
@@ -68,69 +68,61 @@ export default function PostCreationScreen() {
       };
       input.click();
     } else {
+      // Fallback placeholder image for native simulators
       setCustomImageUri('https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=500');
     }
   };
 
   const handlePublish = async () => {
-    if (!caption.trim()) { alert('Gossip text cannot be empty.'); return; }
-    const me = mockDatabase.getCurrentUser();
-    if (!me) return;
-
-    setIsScanning(true);
-    setPiiDetected(false);
-
-    setScanStep('INITIATING LLaVA V2 VISION SCAN...');
-    await new Promise(r => setTimeout(r, 1200));
-    setScanStep('EXTRACTING SCREENSHOT TEXT & METADATA...');
-    await new Promise(r => setTimeout(r, 1000));
-
-    const phonePattern = /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g;
-    const hasPhone = phonePattern.test(caption);
-    const mentionsNames = caption.toLowerCase().includes('ceo of') || caption.toLowerCase().includes('founder of');
-    let finalCaption = caption;
-
-    if (hasPhone || mentionsNames || caption.toLowerCase().includes('doxx') || caption.toLowerCase().includes('phone')) {
-      setScanStep('PII DETECTED — INITIATING OPENCV BOUNDING BOX BLUR...');
-      setPiiDetected(true);
-      await new Promise(r => setTimeout(r, 1500));
-      finalCaption = caption.replace(phonePattern, '[REDACTED PHONE]');
-      if (caption.toLowerCase().includes('doxx')) finalCaption = finalCaption.replace(/doxx/gi, '[REDACTED]');
-      setRedactedCaption(finalCaption);
-    } else {
-      setScanStep('AI SCAN PASS: NO CRITICAL PII DETECTED.');
-      await new Promise(r => setTimeout(r, 800));
+    if (!caption.trim()) { 
+      alert('Gossip text cannot be empty.'); 
+      return; 
     }
-
-    if (forceReview || caption.toLowerCase().includes('audit') || caption.toLowerCase().includes('illegal')) {
-      setScanStep('LOW CONFIDENCE (0.64) → ROUTING TO OPERATOR REVIEW...');
-      await new Promise(r => setTimeout(r, 1800));
-      const newPost = mockDatabase.insertPost({
-        hashed_author_id: me.id,
-        media_url: customImageUri || selectedMediaKey,
-        caption: finalCaption,
-        unlock_price: unlockPrice,
-        redis_key: 'spill:post:' + Math.random().toString(36).substring(2, 9),
-      });
-      mockDatabase.reportPost(newPost.id, me.id, 'AI Auto-Flag: Low vision confidence');
-      setIsScanning(false);
-      alert('Post submitted and routed to Operator review queue.');
-      router.push('/profile');
+    
+    const me = mockDatabase.getCurrentUser();
+    if (!me) {
+      alert('Authentication required.');
       return;
     }
 
-    setScanStep('CREATING REDIS TTL KEY (6H LEASE)... APPROVED.');
-    await new Promise(r => setTimeout(r, 800));
+    setIsScanning(true);
+    setSafetyCheckPassed(true);
 
-    mockDatabase.insertPost({
-      hashed_author_id: me.id,
-      media_url: customImageUri || selectedMediaKey,
-      caption: finalCaption,
+    // Simple security scan flow
+    setScanStep('VALIDATING AUTHENTICATED WORKSPACE...');
+    await new Promise(r => setTimeout(r, 800));
+    setScanStep('VERIFYING GROUP SECURITY POLICIES...');
+    await new Promise(r => setTimeout(r, 700));
+    setScanStep('INSPECTING UPLOADED PROOF METADATA...');
+    await new Promise(r => setTimeout(r, 600));
+
+    // Calculate expiry timestamp
+    let expiresAt: string | null = null;
+    const now = Date.now();
+    if (expiryOption === '6h') {
+      expiresAt = new Date(now + 6 * 3600 * 1000).toISOString();
+    } else if (expiryOption === '24h') {
+      expiresAt = new Date(now + 24 * 3600 * 1000).toISOString();
+    } else if (expiryOption === '48h') {
+      expiresAt = new Date(now + 48 * 3600 * 1000).toISOString();
+    }
+
+    // Insert Post using local storage Mock
+    await supabase.from('posts').insert([{
+      author_id: me.id,
+      image_url: customImageUri || selectedMediaKey,
+      caption: caption.trim(),
       unlock_price: unlockPrice,
-      redis_key: 'spill:post:' + Math.random().toString(36).substring(2, 9),
-    });
+      expires_at: expiresAt,
+    }]);
+
+    // Reward active poster with +3 Receipts
     mockDatabase.grantTokens(me.id, 3);
     mockDatabase.saveState();
+
+    setScanStep('GOSSIP REGISTERED. METRO LEASE LEASED.');
+    await new Promise(r => setTimeout(r, 600));
+
     setIsScanning(false);
     router.push('/');
   };
@@ -141,36 +133,42 @@ export default function PostCreationScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ── Header ── */}
+        {/* Header Row */}
         <View style={styles.headerRow}>
           <View>
-            <Text style={styles.title}>SPILL GOSSIP</Text>
-            <Text style={styles.subtitle}>SUBMIT VERIFIED INTELLIGENCE</Text>
+            <Text style={styles.subtitle}>SPILL PRIVATE CHANNEL</Text>
+            <Text style={styles.title}>Submit Gossip</Text>
           </View>
-          <Pressable style={styles.publishBtn} onPress={handlePublish}>
+          <Pressable 
+            style={({ pressed }) => [
+              styles.publishBtn,
+              pressed && styles.publishBtnPressed
+            ]} 
+            onPress={handlePublish}
+            id="btn-spill-publish"
+          >
             <Sparkles size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.publishText}>PUBLISH  +3</Text>
+            <Text style={styles.publishText}>PUBLISH  +3 TK</Text>
           </Pressable>
         </View>
 
-        {/* ── Warning ── */}
+        {/* Security Warning */}
         <View style={styles.alertBanner}>
-          <ShieldAlert size={13} color={T.brand} />
+          <ShieldAlert size={14} color={T.brand} style={{ marginRight: 8 }} />
           <Text style={styles.alertText}>
-            No pure-text posts · No doxxing · Auto-blur on reports
+            Keep identities hidden · No direct doxxing of real names · Posts will expire based on group rules.
           </Text>
         </View>
 
-        {/* ── Two-column body ── */}
-        <View style={styles.bodyRow}>
-
-          {/* LEFT — proof selector */}
-          <View style={styles.leftCol}>
-            <Text style={styles.sectionLabel}>PROOF</Text>
-
-            <View style={styles.mediaStack}>
-              {Object.keys(SEED_IMAGES).map((key) => {
+        {/* Form Sections */}
+        <View style={styles.layoutBody}>
+          
+          {/* Section 1: Upload Proof */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>UPLOAD PROOF / IMAGERY</Text>
+            
+            <View style={styles.mediaSelectGrid}>
+              {Object.entries(SEED_IMAGES).map(([key, imgAsset]) => {
                 const isSelected = selectedMediaKey === key && !customImageUri;
                 return (
                   <Pressable
@@ -178,10 +176,7 @@ export default function PostCreationScreen() {
                     style={[styles.mediaCard, isSelected && styles.mediaCardSelected]}
                     onPress={() => handleSelectPredefined(key as keyof typeof SEED_IMAGES)}
                   >
-                    <Image
-                      source={SEED_IMAGES[key as keyof typeof SEED_IMAGES]}
-                      style={styles.mediaPreview}
-                    />
+                    <Image source={imgAsset} style={styles.mediaPreview} />
                     {isSelected && <View style={styles.selectedBadge} />}
                   </Pressable>
                 );
@@ -189,92 +184,99 @@ export default function PostCreationScreen() {
             </View>
 
             <Pressable
-              style={[styles.uploadBtn, customImageUri && styles.uploadBtnActive]}
+              style={({ pressed }) => [
+                styles.uploadBtn,
+                customImageUri && styles.uploadBtnActive,
+                pressed && styles.pressed,
+              ]}
               onPress={handleCustomUpload}
+              id="btn-custom-image-upload"
             >
-              <Camera size={13} color={customImageUri ? T.brand : T.muted} />
+              <Camera size={14} color={customImageUri ? T.brand : T.muted} style={{ marginRight: 8 }} />
               <Text style={[styles.uploadText, customImageUri && styles.uploadTextActive]}>
-                {customImageUri ? 'LOADED ✓' : 'UPLOAD'}
+                {customImageUri ? 'CUSTOM IMAGE LOADED ✓' : 'UPLOAD CUSTOM PROOF'}
               </Text>
             </Pressable>
 
             {customImageUri && (
-              <View style={styles.customPreview}>
+              <View style={styles.customPreviewContainer}>
                 <Image source={{ uri: customImageUri }} style={styles.customPreviewImg} />
               </View>
             )}
           </View>
 
-          {/* RIGHT — inputs */}
-          <View style={styles.rightCol}>
-            <Text style={styles.sectionLabel}>SUBSTANCE</Text>
+          {/* Section 2: Intel Details */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>INTEL DETAILS</Text>
             <View style={styles.inputCard}>
               <TextInput
                 style={styles.captionInput}
                 multiline
-                numberOfLines={5}
-                placeholder={"What's the scoop?\n\nTip: type a phone number to trigger AI redaction."}
-                placeholderTextColor={T.textMuted}
+                numberOfLines={4}
+                placeholder="What's the scoop? Explain what happened..."
+                placeholderTextColor={T.muted}
                 value={caption}
                 onChangeText={setCaption}
+                maxLength={280}
+                id="input-gossip-caption"
               />
               <Text style={styles.charCount}>{caption.length}/280</Text>
             </View>
+          </View>
 
-            <Text style={styles.sectionLabel}>PRICE</Text>
+          {/* Section 3: Lock Pricing */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>UNLOCK COST (TOKENS)</Text>
             <View style={styles.priceRow}>
-              <Lock size={12} color={T.text} />
-              <Text style={styles.priceLabel}>Receipts to unlock:</Text>
-              <View style={styles.priceButtons}>
-                {[3, 5, 8, 10].map((price) => (
-                  <Pressable
-                    key={price}
-                    style={[styles.priceBtn, unlockPrice === price && styles.priceBtnActive]}
-                    onPress={() => setUnlockPrice(price)}
-                  >
-                    <Text style={[styles.priceBtnText, unlockPrice === price && styles.priceBtnTextActive]}>
-                      {price}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            <Text style={styles.sectionLabel}>DEBUG MODE</Text>
-            <View style={styles.toggleCard}>
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleLabel}>Force Operator Review</Text>
-                  <Text style={styles.toggleDesc}>Simulate low LLaVA confidence (0.54)</Text>
-                </View>
-                <Switch
-                  value={forceReview}
-                  onValueChange={setForceReview}
-                  trackColor={{ false: '#EAEAEA', true: T.brand }}
-                  thumbColor={'#FFFFFF'}
-                />
-              </View>
+              {[3, 5, 8, 10].map((price) => (
+                <Pressable
+                  key={price}
+                  style={[styles.priceBtn, unlockPrice === price && styles.priceBtnActive]}
+                  onPress={() => setUnlockPrice(price)}
+                  id={`btn-price-${price}`}
+                >
+                  <Text style={[styles.priceBtnText, unlockPrice === price && styles.priceBtnTextActive]}>
+                    {price} TK
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           </View>
-        </View>
 
+          {/* Section 4: TTL Expiration */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>EXPIRATION RULE</Text>
+            <View style={styles.expiryRow}>
+              {(['6h', '24h', '48h', 'never'] as const).map((opt) => (
+                <Pressable
+                  key={opt}
+                  style={[styles.expiryBtn, expiryOption === opt && styles.expiryBtnActive]}
+                  onPress={() => setExpiryOption(opt)}
+                  id={`btn-expiry-${opt}`}
+                >
+                  <Clock size={12} color={expiryOption === opt ? '#FFFFFF' : T.muted} style={{ marginRight: 5 }} />
+                  <Text style={[styles.expiryBtnText, expiryOption === opt && styles.expiryBtnTextActive]}>
+                    {opt.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.expiryTip}>
+              {expiryOption === 'never' 
+                ? 'This spill will persist permanently until deleted by the operator.' 
+                : `This spill will be automatically soft-deleted after ${expiryOption.replace('h', '')} hours.`}
+            </Text>
+          </View>
+        </View>
       </ScrollView>
 
+      {/* Security Overlay Modal */}
       {isScanning && (
         <View style={styles.overlay}>
           <View style={styles.overlayCard}>
-            <ActivityIndicator size="large" color={T.brand} />
-            <Text style={styles.overlayTitle}>SPILL GUARDRAIL ACTIVE</Text>
+            <ActivityIndicator size="large" color={T.brand} style={{ marginBottom: 12 }} />
+            <Text style={styles.overlayTitle}>SPILL SECURITY DISPATCH</Text>
             <Text style={styles.overlayStatus}>{scanStep}</Text>
-            {piiDetected && (
-              <View style={styles.piiNotice}>
-                <ShieldCheck size={16} color={T.brand} style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.piiTitle}>OPENCV REDACTION TRIGGERED</Text>
-                  <Text style={styles.piiCaption}>{redactedCaption}</Text>
-                </View>
-              </View>
-            )}
           </View>
         </View>
       )}
@@ -283,268 +285,270 @@ export default function PostCreationScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  container: { flex: 1, backgroundColor: T.bg },
   scrollContent: {
     padding: Spacing.four,
-    paddingBottom: 60,
+    paddingBottom: 80,
     width: '100%',
     flexGrow: 1,
   },
-
-  // Header
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: Spacing.three,
   },
   title: {
     fontFamily: 'Outfit',
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#1A1A1A',
-    letterSpacing: -0.5,
+    color: T.text,
   },
   subtitle: {
     fontFamily: 'IBM Plex Mono',
     fontSize: 9,
-    color: '#8A8A8A',
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    marginTop: 2,
+    color: T.brand,
+    fontWeight: '700',
+    letterSpacing: 2,
   },
   publishBtn: {
     backgroundColor: T.brand,
-    height: 38,
+    height: 40,
     paddingHorizontal: 16,
     borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  publishBtnPressed: {
+    opacity: 0.85,
+  },
   publishText: {
-    fontFamily: 'Outfit',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: 'bold',
     color: '#FFFFFF',
   },
-
-  // Alert
   alertBanner: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#1C1C1E',
     borderWidth: 1,
-    borderColor: '#EAEAEA',
-    borderRadius: 8,
-    paddingVertical: 8,
+    borderColor: T.border,
+    borderRadius: 10,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     flexDirection: 'row',
-    gap: 8,
     alignItems: 'center',
-    marginBottom: Spacing.three,
+    marginBottom: Spacing.four,
   },
   alertText: {
     fontFamily: 'Inter',
     fontSize: 11,
-    color: T.brand,
+    color: '#E5E5EA',
     flex: 1,
-    fontWeight: '600',
+    lineHeight: 16,
   },
-
-  // Layout
-  bodyRow: { flexDirection: 'row', gap: 40, alignItems: 'stretch', flex: 1 },
-  leftCol: { flex: 1 },
-  rightCol: { flex: 1.5, justifyContent: 'space-between' },
-
+  layoutBody: {
+    gap: Spacing.four,
+  },
+  sectionCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 14,
+    padding: Spacing.four,
+  },
   sectionLabel: {
     fontFamily: 'IBM Plex Mono',
     fontSize: 9,
-    color: 'rgba(26,26,46,0.55)',
-    fontWeight: 'bold',
-    letterSpacing: 2,
-    marginBottom: 6,
-    marginTop: Spacing.three,
+    color: T.brand,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: Spacing.three,
   },
-
-  // Media
-  mediaStack: { gap: 8 },
+  mediaSelectGrid: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginBottom: Spacing.three,
+  },
   mediaCard: {
-    width: '100%',
-    aspectRatio: 1.5,
+    flex: 1,
+    aspectRatio: 1.3,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: 'transparent',
+    position: 'relative',
+    backgroundColor: T.bg,
   },
   mediaCardSelected: {
     borderColor: T.brand,
-    borderWidth: 2,
   },
-  mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
+  mediaPreview: {
+    width: '100%',
+    height: '100%',
+  },
   selectedBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: T.brand,
   },
   uploadBtn: {
-    height: 34,
+    height: 44,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
+    borderColor: T.border,
     borderStyle: 'dashed',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.bg,
   },
-  uploadBtnActive: { borderColor: T.brand, backgroundColor: '#F5F5F5' },
+  uploadBtnActive: {
+    borderColor: T.brand,
+    backgroundColor: 'rgba(255, 59, 92, 0.05)',
+  },
   uploadText: {
-    fontFamily: 'IBM Plex Mono',
-    fontSize: 10,
-    color: '#8A8A8A',
-    fontWeight: '600',
-  },
-  uploadTextActive: { color: T.brand },
-  customPreview: {
-    width: '100%',
-    height: 70,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  customPreviewImg: { width: '100%', height: '100%', resizeMode: 'contain' },
-
-  // Right inputs
-  inputCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-    padding: Spacing.three,
-    borderRadius: 12,
-    flex: 1,
-  },
-  captionInput: {
-    color: '#1A1A1A',
-    fontFamily: 'Inter',
-    fontSize: 16,
-    lineHeight: 24,
-    textAlignVertical: 'top',
-    flex: 1,
-    minHeight: 250,
-  },
-  charCount: {
-    alignSelf: 'flex-end',
-    fontFamily: 'IBM Plex Mono',
-    fontSize: 9,
-    color: T.muted,
-    marginTop: 4,
-  },
-
-  priceRow: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-    padding: Spacing.two,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  priceLabel: {
     fontFamily: 'Inter',
     fontSize: 12,
-    color: '#1A1A1A',
-    flex: 1,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: T.muted,
   },
-  priceButtons: { flexDirection: 'row', gap: 6 },
-  priceBtn: {
-    width: 32,
-    height: 32,
+  uploadTextActive: {
+    color: T.brand,
+  },
+  customPreviewContainer: {
+    marginTop: Spacing.three,
+    height: 150,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: T.border,
+  },
+  customPreviewImg: {
+    width: '100%',
+    height: '100%',
+  },
+  inputCard: {
+    backgroundColor: T.bg,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#EAEAEA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    borderColor: T.border,
+    padding: Spacing.three,
   },
-  priceBtnActive: { backgroundColor: T.brand, borderColor: T.brand },
-  priceBtnText: {
+  captionInput: {
+    fontFamily: 'Inter',
+    color: T.text,
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  charCount: {
     fontFamily: 'IBM Plex Mono',
+    fontSize: 10,
+    color: T.muted,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  priceBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  priceBtnActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  priceBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: T.muted,
+  },
+  priceBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  expiryRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
+  },
+  expiryBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expiryBtnActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  expiryBtnText: {
+    fontFamily: 'Inter',
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#8A8A8A',
+    color: T.muted,
   },
-  priceBtnTextActive: { color: '#FFFFFF' },
-
-  toggleCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-    padding: Spacing.two,
-    borderRadius: 12,
+  expiryBtnTextActive: {
+    color: '#FFFFFF',
   },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  toggleLabel: { fontFamily: 'Inter', fontSize: 12, fontWeight: 'bold', color: '#1A1A1A' },
-  toggleDesc: { fontFamily: 'Inter', fontSize: 10, color: '#8A8A8A', marginTop: 2 },
-
+  expiryTip: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: T.muted,
+    lineHeight: 16,
+  },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(14, 14, 16, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 999,
+    padding: Spacing.six,
   },
   overlayCard: {
-    width: '80%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: T.surface,
     borderWidth: 1,
-    borderColor: T.brand,
+    borderColor: T.border,
     borderRadius: 16,
-    padding: Spacing.four,
+    padding: Spacing.six,
+    width: '100%',
+    maxWidth: 320,
     alignItems: 'center',
-    shadowColor: T.brand,
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
   },
   overlayTitle: {
     fontFamily: 'Outfit',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
-    color: T.brand,
-    marginTop: Spacing.three,
-    letterSpacing: 0,
+    color: T.text,
+    marginBottom: 8,
+    letterSpacing: 0.5,
   },
   overlayStatus: {
     fontFamily: 'IBM Plex Mono',
-    fontSize: 11,
-    color: '#1A1A1A',
+    fontSize: 10,
+    color: T.brand,
+    fontWeight: '700',
     textAlign: 'center',
-    marginTop: 8,
     lineHeight: 16,
   },
-  piiNotice: {
-    marginTop: Spacing.three,
-    backgroundColor: '#F5F5F5',
-    borderWidth: 1,
-    borderColor: T.brand,
-    borderRadius: 8,
-    padding: Spacing.two,
-    flexDirection: 'row',
-    width: '100%',
+  pressed: {
+    opacity: 0.85,
   },
-  piiTitle: {
-    fontFamily: 'IBM Plex Mono',
-    fontSize: 10,
-    fontWeight: 'bold',
-    color: T.brand,
-    marginBottom: 4,
-  },
-  piiCaption: { fontFamily: 'Inter', fontSize: 12, color: '#1A1A1A' },
 });

@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { createClient } from '@supabase/supabase-js';
 
 // Simple fallback storage helper for Web and Native
 const getStorage = () => {
@@ -12,7 +13,6 @@ const getStorage = () => {
       }
     };
   } else {
-    // Simple memory fallback for native if AsyncStorage is not initialized yet
     const mem: Record<string, string> = {};
     return {
       getItem: (key: string) => mem[key] || null,
@@ -23,52 +23,35 @@ const getStorage = () => {
 
 const storage = getStorage();
 
-// Simple custom SHA-256 implementation to hash the device ID (avoiding heavy external libraries)
 function simpleHash(str: string): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
-  // Convert to a pseudo-hex uuid format
   const hex = Math.abs(hash).toString(16).padStart(8, '0');
   return `00000000-0000-0000-0000-${hex.repeat(2)}`;
-}
-
-// Generate/Retrieve Hashed Device ID for Anon Auth
-export function getHashedDeviceId(): string {
-  const STORAGE_KEY = 'spill_hashed_device_id';
-  let id = storage.getItem(STORAGE_KEY);
-  if (!id) {
-    // In production, we'd use expo-device to get a stable ID
-    // For demo/dev, we generate a random stable client fingerprint
-    const rand = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-    id = simpleHash(rand);
-    storage.setItem(STORAGE_KEY, id);
-  }
-  return id;
 }
 
 // --- DATABASE TYPES ---
 export interface UserProfile {
   id: string;
-  hashed_device_id: string;
+  alias: string;
+  real_identity: string; // e.g. email or real name, visible only to operators
   token_balance: number;
-  cluster_id: string | null;
   created_at: string;
 }
 
 export interface Post {
   id: string;
-  hashed_author_id: string;
-  media_url: string;
+  author_id: string;
+  image_url: string; // seed asset key or image URI
   caption: string;
   unlock_price: number;
   is_blurred: boolean;
-  redis_key: string;
   created_at: string;
-  decay_at: string; // Redis TTL decay timestamp
+  expires_at: string | null; // expiration date-time, nullable
   reported_count: number;
 }
 
@@ -90,11 +73,11 @@ export interface Report {
 
 // --- MOCK DATABASE ENGINE ---
 class LocalMockDatabase {
-  private users: UserProfile[] = [];
-  private posts: Post[] = [];
-  private unlocks: Unlock[] = [];
-  private reports: Report[] = [];
-  private currentUser: UserProfile | null = null;
+  public users: UserProfile[] = [];
+  public posts: Post[] = [];
+  public unlocks: Unlock[] = [];
+  public reports: Report[] = [];
+  private currentUserSessionId: string = '';
 
   constructor() {
     this.loadState();
@@ -107,11 +90,13 @@ class LocalMockDatabase {
       const p = storage.getItem('spill_db_posts');
       const un = storage.getItem('spill_db_unlocks');
       const r = storage.getItem('spill_db_reports');
+      const sess = storage.getItem('spill_current_user_id');
 
       if (u) this.users = JSON.parse(u);
       if (p) this.posts = JSON.parse(p);
       if (un) this.unlocks = JSON.parse(un);
       if (r) this.reports = JSON.parse(r);
+      if (sess) this.currentUserSessionId = sess;
     } catch (e) {
       console.error('Error loading mock database state:', e);
     }
@@ -123,146 +108,141 @@ class LocalMockDatabase {
       storage.setItem('spill_db_posts', JSON.stringify(this.posts));
       storage.setItem('spill_db_unlocks', JSON.stringify(this.unlocks));
       storage.setItem('spill_db_reports', JSON.stringify(this.reports));
+      storage.setItem('spill_current_user_id', this.currentUserSessionId);
     } catch (e) {
       console.error('Error saving mock database state:', e);
     }
   }
 
-  private seedIfNeeded() {
-    const deviceHash = getHashedDeviceId();
-    
-    // Ensure current user profile exists
-    let me = this.users.find(u => u.hashed_device_id === deviceHash);
-    if (!me) {
-      me = {
-        id: simpleHash('current-user-' + deviceHash),
-        hashed_device_id: deviceHash,
-        token_balance: 10, // Starting tokens
-        cluster_id: 'Skeptics', // Initial bucket
-        created_at: new Date().toISOString()
-      };
-      this.users.push(me);
-    }
-    this.currentUser = me;
+  public setCurrentUserSessionId(id: string) {
+    this.currentUserSessionId = id;
+    this.saveState();
+  }
 
-    // Seed some other dummy users
-    const posterIds = [
-      simpleHash('user-instigator-1'),
-      simpleHash('user-lurker-2'),
-      simpleHash('user-skeptic-3'),
+  public createUser(email: string, alias: string): UserProfile {
+    const newUser: UserProfile = {
+      id: simpleHash('user-' + email),
+      alias,
+      real_identity: email,
+      token_balance: 10,
+      created_at: new Date().toISOString()
+    };
+    this.users.push(newUser);
+    this.saveState();
+    return newUser;
+  }
+
+  private seedIfNeeded() {
+    const seedUsersData = [
+      { email: 'alice@spill.chat', alias: 'TeaSpiller_02' },
+      { email: 'bob@spill.chat', alias: 'RumorMill_99' },
+      { email: 'charlie@spill.chat', alias: 'SiliconInsider' },
     ];
 
-    const posterNames = ['Instigators', 'Lurkers', 'Instigators'];
-    posterIds.forEach((id, idx) => {
-      if (!this.users.some(u => u.id === id)) {
+    seedUsersData.forEach((u) => {
+      const id = simpleHash('user-' + u.email);
+      if (!this.users.some(usr => usr.id === id)) {
         this.users.push({
           id,
-          hashed_device_id: simpleHash('device-' + idx),
+          alias: u.alias,
+          real_identity: u.email,
           token_balance: 15,
-          cluster_id: posterNames[idx],
           created_at: new Date(Date.now() - 86400000).toISOString()
         });
       }
     });
 
-    // Seed Posts with different decay times
+    const aliceId = simpleHash('user-alice@spill.chat');
+    const bobId = simpleHash('user-bob@spill.chat');
+    const charlieId = simpleHash('user-charlie@spill.chat');
+
     if (this.posts.length === 0) {
       const now = Date.now();
       this.posts = [
         {
           id: 'post-seed-1',
-          hashed_author_id: posterIds[0],
-          media_url: 'night_market_gossip', // corresponds to asset
+          author_id: aliceId,
+          image_url: 'night_market_gossip',
           caption: "Spotted at the night market: two local VCs arguing over who pays for the $4 noodles. One threatened to downround the other's Series A.",
           unlock_price: 5,
           is_blurred: true,
-          redis_key: 'spill:post:post-seed-1',
-          created_at: new Date(now - 3600000).toISOString(), // 1h ago
-          decay_at: new Date(now + 18000000).toISOString(),  // 5h remaining (6h total)
+          created_at: new Date(now - 3600000).toISOString(),
+          expires_at: new Date(now + 18000000).toISOString(),
           reported_count: 0
         },
         {
           id: 'post-seed-2',
-          hashed_author_id: posterIds[1],
-          media_url: 'classified_dossier',
+          author_id: bobId,
+          image_url: 'classified_dossier',
           caption: "Leaked internal memo from the major AI lab: they are running out of power grid capacity. They've started negotiations with an offshore nuclear barge operator.",
           unlock_price: 8,
           is_blurred: true,
-          redis_key: 'spill:post:post-seed-2',
-          created_at: new Date(now - 7200000).toISOString(), // 2h ago
-          decay_at: new Date(now + 14400000).toISOString(),  // 4h remaining (6h total)
+          created_at: new Date(now - 7200000).toISOString(),
+          expires_at: new Date(now + 14400000).toISOString(),
           reported_count: 0
         },
         {
           id: 'post-seed-3',
-          hashed_author_id: posterIds[2],
-          media_url: 'confidential_leak',
+          author_id: charlieId,
+          image_url: 'confidential_leak',
           caption: "Whispers in the fintech cluster: the top payment API is raising transaction fees by 0.5% next quarter without telling merchants in advance.",
           unlock_price: 3,
           is_blurred: true,
-          redis_key: 'spill:post:post-seed-3',
-          created_at: new Date(now - 14400000).toISOString(), // 4h ago
-          decay_at: new Date(now + 7200000).toISOString(),   // 2h remaining (6h total)
+          created_at: new Date(now - 14400000).toISOString(),
+          expires_at: new Date(now + 7200000).toISOString(),
           reported_count: 0
         }
       ];
 
-      // Auto-unlock the third post for current user to show how unlocked works out of the box
-      this.unlocks = [
-        {
-          id: 'unlock-seed-1',
-          post_id: 'post-seed-3',
-          unlocker_id: me.id,
-          created_at: new Date().toISOString()
-        }
-      ];
+      if (this.currentUserSessionId) {
+        this.unlocks = [
+          {
+            id: 'unlock-seed-1',
+            post_id: 'post-seed-3',
+            unlocker_id: this.currentUserSessionId,
+            created_at: new Date().toISOString()
+          }
+        ];
+      }
     }
     
     this.saveState();
   }
 
-  // --- QUERY UTILITIES ---
   public getUsers() { return this.users; }
+
   public getPosts() {
-    // Process Redis Decay: Remove expired posts
     const now = Date.now();
-    const activePosts = this.posts.filter(p => {
-      const isExpired = new Date(p.decay_at).getTime() <= now;
+    return this.posts.filter(p => {
+      const isExpired = p.expires_at ? new Date(p.expires_at).getTime() <= now : false;
       const isReported = p.reported_count > 0;
       return !isExpired && !isReported;
     });
-
-    if (activePosts.length !== this.posts.length) {
-      // Clean up physical database for expired/reported posts (Hard Delete on expiry)
-      this.posts = this.posts.filter(p => {
-        const isExpired = new Date(p.decay_at).getTime() <= now;
-        return !isExpired; // Let reported stay but hidden, expired is hard deleted
-      });
-      this.saveState();
-    }
-
-    return activePosts;
   }
+
   public getUnlocks() { return this.unlocks; }
   public getReports() { return this.reports; }
+
   public getCurrentUser() {
-    // Refresh ref
-    const deviceHash = getHashedDeviceId();
-    const me = this.users.find(u => u.hashed_device_id === deviceHash);
-    if (me) this.currentUser = me;
-    return this.currentUser;
+    let me = this.currentUserSessionId ? this.users.find(u => u.id === this.currentUserSessionId) : null;
+    if (!me) {
+      const randomId = Math.floor(Math.random() * 900) + 100;
+      const alias = `TeaSpiller_${randomId}`;
+      const email = `anon_${randomId}@spill.chat`;
+      me = this.createUser(email, alias);
+      this.currentUserSessionId = me.id;
+      this.saveState();
+    }
+    return me;
   }
 
-  // --- MUTATIONS ---
-  public insertPost(postData: Omit<Post, 'id' | 'created_at' | 'decay_at' | 'reported_count' | 'is_blurred'>) {
-    const now = Date.now();
+  public insertPost(postData: Omit<Post, 'id' | 'created_at' | 'reported_count' | 'is_blurred'>) {
     const newPost: Post = {
       ...postData,
       id: 'post-' + Math.random().toString(36).substring(2, 9),
       is_blurred: true,
       reported_count: 0,
-      created_at: new Date(now).toISOString(),
-      decay_at: new Date(now + 6 * 3600 * 1000).toISOString() // 6 hours Redis TTL
+      created_at: new Date().toISOString(),
     };
     this.posts.unshift(newPost);
     this.saveState();
@@ -280,7 +260,6 @@ class LocalMockDatabase {
     };
     this.reports.push(newReport);
 
-    // Auto-hide by incrementing report count (Triggers instant hide via RLS check)
     const post = this.posts.find(p => p.id === postId);
     if (post) {
       post.reported_count += 1;
@@ -290,13 +269,11 @@ class LocalMockDatabase {
     return newReport;
   }
 
-  // ATOMIC TRANSACTON RPC
   public unlockPostRpc(postId: string, userId: string) {
     const postIndex = this.posts.findIndex(p => p.id === postId);
     if (postIndex === -1) throw new Error('Post not found');
     const post = this.posts[postIndex];
 
-    // Check if already unlocked
     const alreadyUnlocked = this.unlocks.some(u => u.post_id === postId && u.unlocker_id === userId);
     if (alreadyUnlocked) return;
 
@@ -304,9 +281,8 @@ class LocalMockDatabase {
     if (userIndex === -1) throw new Error('User not found');
     const user = this.users[userIndex];
 
-    const authorId = post.hashed_author_id;
+    const authorId = post.author_id;
 
-    // Self-unlock does not cost anything
     if (authorId === userId) {
       this.unlocks.push({
         id: 'unlock-' + Math.random().toString(36).substring(2, 9),
@@ -318,21 +294,17 @@ class LocalMockDatabase {
       return;
     }
 
-    // Atomic Balance Check & Transfer
     if (user.token_balance < post.unlock_price) {
       throw new Error('insufficient balance');
     }
 
-    // Deduct reader balance
     user.token_balance -= post.unlock_price;
 
-    // Reward creator balance (60% i.e. 3/5, or v_price * 3 / 5)
     const authorIndex = this.users.findIndex(u => u.id === authorId);
     if (authorIndex !== -1) {
       this.users[authorIndex].token_balance += Math.floor(post.unlock_price * 3 / 5);
     }
 
-    // Record unlock
     this.unlocks.push({
       id: 'unlock-' + Math.random().toString(36).substring(2, 9),
       post_id: postId,
@@ -340,18 +312,9 @@ class LocalMockDatabase {
       created_at: new Date().toISOString()
     });
 
-    // Redis TTL Extend: Extend decay time by 15 mins (cap total at 48h from creation)
-    const currentDecay = new Date(post.decay_at).getTime();
-    const createdAt = new Date(post.created_at).getTime();
-    const extension = 15 * 60 * 1000; // 15 mins
-    const maxDecay = createdAt + 48 * 3600 * 1000; // 48 hours max
-
-    post.decay_at = new Date(Math.min(currentDecay + extension, maxDecay)).toISOString();
-
     this.saveState();
   }
 
-  // Helper for admin/test to reset DB
   public resetDatabase() {
     storage.setItem('spill_db_users', '');
     storage.setItem('spill_db_posts', '');
@@ -361,21 +324,21 @@ class LocalMockDatabase {
     this.posts = [];
     this.unlocks = [];
     this.reports = [];
+    this.currentUserSessionId = '';
     this.seedIfNeeded();
+    this.saveState();
   }
 
-  // Admin simulation: fast forward time by minutes
   public fastForwardTime(minutes: number) {
     const ms = minutes * 60 * 1000;
     this.posts = this.posts.map(p => ({
       ...p,
-      decay_at: new Date(new Date(p.decay_at).getTime() - ms).toISOString(),
+      expires_at: p.expires_at ? new Date(new Date(p.expires_at).getTime() - ms).toISOString() : null,
       created_at: new Date(new Date(p.created_at).getTime() - ms).toISOString()
     }));
     this.saveState();
   }
 
-  // Admin simulation: grant tokens
   public grantTokens(userId: string, amount: number) {
     const user = this.users.find(u => u.id === userId);
     if (user) {
@@ -387,116 +350,172 @@ class LocalMockDatabase {
 
 export const mockDatabase = new LocalMockDatabase();
 
-// --- SUPABASE CLIENT INTERFACE MOCK ---
+// --- HYBRID REAL SUPABASE CLIENT CONFIG ---
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+
+export const isRealSupabaseEnabled = !!(supabaseUrl && supabaseAnonKey);
+
+const realSupabase = isRealSupabaseEnabled
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        storage: {
+          getItem: (key: string) => {
+            try { return storage.getItem(key); } catch { return null; }
+          },
+          setItem: (key: string, val: string) => {
+            try { storage.setItem(key, val); } catch {}
+          },
+          removeItem: (key: string) => {
+            try {
+              if (Platform.OS === 'web') {
+                localStorage.removeItem(key);
+              }
+            } catch {}
+          }
+        },
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: false
+      }
+    })
+  : null;
+
+// --- DYNAMICALLY ROUTED EXPORT INTERFACE ---
 export const supabase = {
   auth: {
     getSession: async () => {
+      if (isRealSupabaseEnabled && realSupabase) {
+        const { data, error } = await realSupabase.auth.getSession();
+        if (error) return { data: null, error };
+
+        // Auto-login guest anonymously if no active session
+        if (!data.session) {
+          const signInRes = await realSupabase.auth.signInAnonymously();
+          if (signInRes.error) {
+            return { data: { session: null }, error: signInRes.error };
+          }
+          const user = signInRes.data.user;
+          if (user) {
+            // Check if profile row exists in the public users table
+            const { data: profileCheck } = await realSupabase.from('users').select('id').eq('id', user.id);
+            if (!profileCheck || profileCheck.length === 0) {
+              const randomId = Math.floor(Math.random() * 900) + 100;
+              const alias = `TeaSpiller_${randomId}`;
+              await realSupabase.from('users').insert([{
+                id: user.id,
+                alias,
+                real_identity: 'Anonymous Guest',
+                token_balance: 10
+              }]);
+            }
+          }
+          return realSupabase.auth.getSession();
+        }
+        return { data, error: null };
+      }
+
       const me = mockDatabase.getCurrentUser();
       return {
         data: {
-          session: me ? { user: { id: me.id }, access_token: 'mock-jwt' } : null
+          session: me ? { user: { id: me.id, email: me.real_identity }, access_token: 'mock-jwt' } : null
         },
         error: null
       };
+    },
+    signInAnonymously: async () => {
+      if (isRealSupabaseEnabled && realSupabase) {
+        return realSupabase.auth.signInAnonymously();
+      }
+      const me = mockDatabase.getCurrentUser();
+      return {
+        data: { user: me ? { id: me.id, email: me.real_identity } : null },
+        error: null
+      };
+    },
+    signInWithOtp: async ({ email, inviteCode }: { email: string; inviteCode: string }) => {
+      return { data: null, error: new Error('Direct OTP login disabled. Anonymous login only.') };
+    },
+    signUp: async ({ email, alias, inviteCode }: { email: string; alias: string; inviteCode: string }) => {
+      return { data: null, error: new Error('Direct signup disabled. Anonymous login only.') };
+    },
+    signOut: async () => {
+      if (isRealSupabaseEnabled && realSupabase) {
+        return realSupabase.auth.signOut();
+      }
+      mockDatabase.setCurrentUserSessionId('');
+      return { error: null };
     }
   },
   
   from: (table: string) => {
-    return {
-      select: (fields: string = '*') => {
-        return {
-          order: (column: string, { ascending = false } = {}) => {
-            return {
-              eq: (col: string, val: any) => {
-                let data: any[] = [];
-                if (table === 'posts') {
-                  data = mockDatabase.getPosts().filter((p: any) => p[col] === val);
-                } else if (table === 'users') {
-                  data = mockDatabase.getUsers().filter((u: any) => u[col] === val);
-                } else if (table === 'unlocks') {
-                  data = mockDatabase.getUnlocks().filter((un: any) => un[col] === val);
-                }
-                
-                return Promise.resolve({ data, error: null });
-              },
-              then: (resolve: any) => {
-                let data: any[] = [];
-                if (table === 'posts') {
-                  data = [...mockDatabase.getPosts()];
-                  data.sort((a, b) => {
-                    const diff = new Date(a[column]).getTime() - new Date(b[column]).getTime();
-                    return ascending ? diff : -diff;
-                  });
-                } else if (table === 'users') {
-                  data = [...mockDatabase.getUsers()];
-                } else if (table === 'unlocks') {
-                  data = [...mockDatabase.getUnlocks()];
-                }
-                
-                resolve({ data, error: null });
-              }
-            };
-          },
-          eq: (col: string, val: any) => {
-            return {
-              then: (resolve: any) => {
-                let data: any[] = [];
-                if (table === 'posts') {
-                  data = mockDatabase.getPosts().filter((p: any) => p[col] === val);
-                } else if (table === 'users') {
-                  data = mockDatabase.getUsers().filter((u: any) => u[col] === val);
-                } else if (table === 'unlocks') {
-                  data = mockDatabase.getUnlocks().filter((un: any) => un[col] === val);
-                }
-                
-                resolve({ data, error: null });
-              }
-            };
-          },
-          then: (resolve: any) => {
-            let data: any[] = [];
-            if (table === 'posts') data = mockDatabase.getPosts();
-            else if (table === 'users') data = mockDatabase.getUsers();
-            else if (table === 'unlocks') data = mockDatabase.getUnlocks();
-            
-            resolve({ data, error: null });
-          }
-        };
-      },
+    if (isRealSupabaseEnabled && realSupabase) {
+      return realSupabase.from(table);
+    }
 
-      insert: (rows: any[]) => {
-        return {
-          select: () => ({
-            then: (resolve: any) => {
-              const results: any[] = [];
-              rows.forEach(row => {
-                if (table === 'posts') {
-                  const p = mockDatabase.insertPost(row);
-                  results.push(p);
-                } else if (table === 'reports') {
-                  const r = mockDatabase.reportPost(row.post_id, row.reporter_id, row.reason);
-                  results.push(r);
-                }
-              });
-              resolve({ data: results, error: null });
-            }
-          }),
-          then: (resolve: any) => {
-            rows.forEach(row => {
-              if (table === 'posts') {
-                mockDatabase.insertPost(row);
-              } else if (table === 'reports') {
-                mockDatabase.reportPost(row.post_id, row.reporter_id, row.reason);
-              }
-            });
-            resolve({ data: null, error: null });
-          }
-        };
-      }
+    // Local storage mock builder
+    let initialData: any[] = [];
+    if (table === 'posts') initialData = mockDatabase.getPosts();
+    else if (table === 'users') initialData = mockDatabase.getUsers();
+    else if (table === 'unlocks') initialData = mockDatabase.getUnlocks();
+
+    const response = { data: initialData, error: null };
+    const promise = Promise.resolve(response) as any;
+
+    promise.order = (column: string, { ascending = false } = {}) => {
+      const sorted = [...initialData].sort((a, b) => {
+        const diff = new Date(a[column]).getTime() - new Date(b[column]).getTime();
+        return ascending ? diff : -diff;
+      });
+      const sortedResponse = { data: sorted, error: null };
+      const sortedPromise = Promise.resolve(sortedResponse) as any;
+      sortedPromise.eq = (col: string, val: any) => {
+        const filtered = sorted.filter((d: any) => d[col] === val);
+        return Promise.resolve({ data: filtered, error: null });
+      };
+      return sortedPromise;
     };
+
+    promise.eq = (col: string, val: any) => {
+      const filtered = initialData.filter((d: any) => d[col] === val);
+      return Promise.resolve({ data: filtered, error: null });
+    };
+
+    promise.update = (values: any) => {
+      return {
+        eq: (col: string, val: any) => {
+          return {
+            then: (resolve: any) => {
+              if (table === 'users') {
+                const user = mockDatabase.getUsers().find((u: any) => u[col] === val);
+                if (user) {
+                  if (values.alias) {
+                    const taken = mockDatabase.getUsers().some(u => u.id !== user.id && u.alias.toLowerCase() === values.alias.toLowerCase());
+                    if (taken) {
+                      resolve({ data: null, error: new Error('Alias is already taken.') });
+                      return Promise.resolve({ data: null, error: new Error('Alias is already taken.') });
+                    }
+                    user.alias = values.alias;
+                    mockDatabase.saveState();
+                  }
+                }
+              }
+              resolve({ data: null, error: null });
+              return Promise.resolve({ data: null, error: null });
+            }
+          };
+        }
+      } as any;
+    };
+
+    return promise;
   },
 
   rpc: async (func: string, params: any) => {
+    if (isRealSupabaseEnabled && realSupabase) {
+      return realSupabase.rpc(func, params);
+    }
+    
     if (func === 'unlock_post') {
       try {
         mockDatabase.unlockPostRpc(params.p_post_id, params.p_user_id);
