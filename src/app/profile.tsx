@@ -13,7 +13,7 @@ import { Terminal, Shield, User, HardDrive, Clock, Check, Trash2, Key, LogOut, B
 import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
-import { supabase, mockDatabase } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
@@ -43,22 +43,22 @@ export default function ProfileScreen() {
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [bannedEmails, setBannedEmails] = useState<string[]>([]);
 
-  const loadData = () => {
-    const profile = mockDatabase.getCurrentUser();
+  const loadData = async () => {
+    const profile = await getCurrentUserProfile();
     if (profile) {
       setMe(profile);
       
-      const posts = mockDatabase.getPosts();
-      const unlocks = mockDatabase.getUnlocks();
-      const reports = mockDatabase.getReports();
-      const users = mockDatabase.getUsers();
+      const { data: posts } = await supabase.from('posts').select('*');
+      const { data: unlocks } = await supabase.from('unlocks').select('*');
+      const { data: reports } = await supabase.from('reports').select('*');
+      const { data: users } = await supabase.from('users').select('*');
 
-      setPostsCount(posts.filter(p => p.author_id === profile.id).length);
-      setUnlocksCount(unlocks.filter(u => u.unlocker_id === profile.id).length);
+      setPostsCount((posts || []).filter(p => p.author_id === profile.id).length);
+      setUnlocksCount((unlocks || []).filter(u => u.unlocker_id === profile.id).length);
 
-      setAllPosts(mockDatabase.posts || []);
-      setAllReports(reports);
-      setAllUsers(users);
+      setAllPosts(posts || []);
+      setAllReports(reports || []);
+      setAllUsers(users || []);
       
       const bans = localStorage.getItem('spill_banned_emails');
       if (bans) setBannedEmails(JSON.parse(bans));
@@ -100,18 +100,11 @@ export default function ProfileScreen() {
   };
 
   const handleResetDatabase = () => {
-    if (confirm('Are you sure you want to wipe the database? All users, posts, and balances will be reset.')) {
-      mockDatabase.resetDatabase();
-      loadData();
-      alert('Database successfully reset to seeded state.');
-      router.replace('/');
-    }
+    alert('Mock database controls disabled in live mode. Wipe data in Supabase directly.');
   };
 
   const handleFastForward = (minutes: number) => {
-    mockDatabase.fastForwardTime(minutes);
-    loadData();
-    alert(`Time advanced by ${minutes} minutes. Active posts TTL reduced.`);
+    alert('Fast-forward simulator disabled in live mode.');
   };
 
   const handleAdminAuth = () => {
@@ -124,20 +117,13 @@ export default function ProfileScreen() {
   };
 
   // ADMIN OPERATIONS
-  const handleApprovePost = (postId: string) => {
-    const post = allPosts.find(p => p.id === postId);
-    if (post) {
-      post.reported_count = 0; // reset report counts
-      mockDatabase.saveState();
-      loadData();
-      alert('Post approved and verified.');
-    }
+  const handleApprovePost = async (postId: string) => {
+    await supabase.from('posts').update({ reported_count: 0 }).eq('id', postId);
+    loadData();
+    alert('Post approved and verified.');
   };
-  const handleHardDeletePost = (postId: string) => {
-    mockDatabase.posts = mockDatabase.posts.filter((p: any) => p.id !== postId);
-    mockDatabase.unlocks = mockDatabase.unlocks.filter((u: any) => u.post_id !== postId);
-    mockDatabase.reports = mockDatabase.reports.filter((r: any) => r.post_id !== postId);
-    mockDatabase.saveState();
+  const handleHardDeletePost = async (postId: string) => {
+    await supabase.from('posts').delete().eq('id', postId);
     loadData();
     alert('Post permanently deleted. Redis TTL lease terminated.');
   };

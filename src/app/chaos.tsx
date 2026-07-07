@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Send, Users, ShieldAlert, Hash } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
-import { mockDatabase } from '@/lib/supabase';
+import { getCurrentUserProfile } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
@@ -73,8 +73,8 @@ export default function ChaosRoomsScreen() {
   const [activeUsers, setActiveUsers] = useState(12);
   const flatListRef = useRef<FlatList>(null);
 
-  const loadUserData = () => {
-    const me = mockDatabase.getCurrentUser();
+  const loadUserData = async () => {
+    const me = await getCurrentUserProfile();
     if (me) {
       setCurrentUser(me);
 

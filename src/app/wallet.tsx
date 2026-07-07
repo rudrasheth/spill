@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ticket, ArrowUpRight, ArrowDownLeft, Flame, Info, TrendingDown } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
-import { supabase, mockDatabase } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
@@ -38,54 +38,50 @@ export default function WalletScreen() {
   const isMobile = width < 768;
 
   const loadWalletData = async () => {
-    const me = mockDatabase.getCurrentUser();
+    const me = await getCurrentUserProfile();
     if (me) {
       setBalance(me.token_balance);
 
-      const unlocks = mockDatabase.getUnlocks().filter(u => u.unlocker_id === me.id);
-      const posts = mockDatabase.getPosts();
+      const { data: unlocksData } = await supabase.from('unlocks').select('*').eq('unlocker_id', me.id);
+      const { data: postsData } = await supabase.from('posts').select('*');
+      
+      const unlocks = unlocksData || [];
+      const posts = postsData || [];
+
+      let newLedger: LedgerItem[] = [];
+
+      for (const u of unlocks) {
+        const post = posts.find(p => p.id === u.post_id);
+        if (post) {
+          const { data: authorUser } = await supabase.from('users').select('alias').eq('id', post.author_id).single();
+          newLedger.push({
+            id: u.id,
+            type: 'spend',
+            amount: post.unlock_price,
+            label: `Unlocked intel from @${authorUser?.alias || 'Unknown'}`,
+            timestamp: new Date(u.created_at).toLocaleDateString(),
+          });
+        }
+      }
+
       const myPosts = posts.filter(p => p.author_id === me.id);
+      for (const p of myPosts) {
+        const { data: myUnlocks } = await supabase.from('unlocks').select('*').eq('post_id', p.id);
+        if (myUnlocks && myUnlocks.length > 0) {
+          myUnlocks.forEach(u => {
+            newLedger.push({
+              id: `earned-${u.id}`,
+              type: 'earn',
+              amount: Math.floor(p.unlock_price * 3 / 5),
+              label: `Payout for spill ID ${p.id.substring(0, 8)}`,
+              timestamp: new Date(u.created_at).toLocaleDateString(),
+            });
+          });
+        }
+      }
 
-      const items: LedgerItem[] = [];
-
-      // Add unlocks (Spends)
-      unlocks.forEach((un) => {
-        const post = posts.find(p => p.id === un.post_id);
-        const cost = post ? post.unlock_price : 5;
-        const author = mockDatabase.getUsers().find(u => u.id === post?.author_id);
-        const authorAlias = author ? `@${author.alias}` : '@Unknown';
-        items.push({
-          id: un.id,
-          type: 'spend',
-          amount: cost,
-          label: `Unlocked Spill from ${authorAlias}`,
-          timestamp: new Date(un.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-        });
-      });
-
-      // Add posts (Earnings)
-      myPosts.forEach((post) => {
-        items.push({
-          id: post.id,
-          type: 'earn',
-          amount: 3, // Posting reward
-          label: `Earned: Shared Spill Proof`,
-          timestamp: new Date(post.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-        });
-      });
-
-      // Welcome Grant
-      items.push({
-        id: 'init-purchase',
-        type: 'purchase',
-        amount: 10,
-        label: 'Platform Welcome Grant',
-        timestamp: new Date(me.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-      });
-
-      // Sort items by date (newest first)
-      items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      setLedger(items);
+      newLedger.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setLedger(newLedger);
     }
   };
 
@@ -95,12 +91,13 @@ export default function WalletScreen() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleBuyTokens = (amount: number) => {
-    const me = mockDatabase.getCurrentUser();
+  const handleBuyTokens = async (amount: number, desc: string) => {
+    const me = await getCurrentUserProfile();
     if (me) {
-      mockDatabase.grantTokens(me.id, amount);
+      const newBalance = me.token_balance + amount;
+      await supabase.from('users').update({ token_balance: newBalance }).eq('id', me.id);
       loadWalletData();
-      alert(`Successfully loaded +${amount} Tokens!`);
+      alert(`Successfully acquired ${amount} tokens (${desc}).`);
     }
   };
 

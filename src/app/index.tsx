@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, Unlock, Eye, HelpCircle, Edit2, Check, X } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
-import { supabase, mockDatabase, Post } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile, Post } from '@/lib/supabase';
 
 const SEED_IMAGES: Record<string, any> = {
   classified_dossier: require('@/assets/images/classified_dossier.png'),
@@ -26,6 +26,7 @@ export default function GossipFeedScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [unlockedPostIds, setUnlockedPostIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [authorsMap, setAuthorsMap] = useState<Record<string, string>>({});
   
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editCaption, setEditCaption] = useState('');
@@ -35,7 +36,7 @@ export default function GossipFeedScreen() {
   else if (width >= 768) numCols = 2;
 
   const loadFeedData = async () => {
-    const me = mockDatabase.getCurrentUser();
+    const me = await getCurrentUserProfile();
     if (!me) return;
     setCurrentUser(me);
 
@@ -44,6 +45,14 @@ export default function GossipFeedScreen() {
 
     const { data: unlocksData } = await supabase.from('unlocks').select('*').eq('unlocker_id', me.id);
     if (unlocksData) setUnlockedPostIds(unlocksData.map((u: any) => u.post_id));
+    
+    // Fetch all users to map author aliases
+    const { data: usersData } = await supabase.from('users').select('id, alias');
+    if (usersData) {
+      const map: Record<string, string> = {};
+      usersData.forEach((u: any) => map[u.id] = u.alias);
+      setAuthorsMap(map);
+    }
   };
 
   useEffect(() => {
@@ -81,8 +90,7 @@ export default function GossipFeedScreen() {
     const isAuthor = item.author_id === currentUser?.id;
     const isUnlocked = unlockedPostIds.includes(item.id) || isAuthor;
 
-    const authorUser = mockDatabase.getUsers().find(u => u.id === item.author_id);
-    const authorAlias = authorUser ? `@${authorUser.alias}` : '@Unknown';
+    const authorAlias = authorsMap[item.author_id] ? `@${authorsMap[item.author_id]}` : '@Unknown';
 
     // Resolve Image Source
     let imageSource = SEED_IMAGES.confidential_leak;

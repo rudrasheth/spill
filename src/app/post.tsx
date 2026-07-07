@@ -16,7 +16,7 @@ import { Camera, Lock, ShieldCheck, ShieldAlert, Sparkles, Clock } from 'lucide-
 import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
-import { supabase, mockDatabase } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 
 const T = {
   brand: '#FF3B5C',
@@ -83,7 +83,7 @@ export default function PostCreationScreen() {
       return; 
     }
     
-    const me = mockDatabase.getCurrentUser();
+    const me = await getCurrentUserProfile();
     if (!me) {
       alert('Authentication required.');
       return;
@@ -121,8 +121,7 @@ export default function PostCreationScreen() {
     }]);
 
     // Reward active poster with +3 Receipts
-    mockDatabase.grantTokens(me.id, 3);
-    mockDatabase.saveState();
+    await supabase.from('users').update({ token_balance: me.token_balance + 3 }).eq('id', me.id);
 
     setScanStep('GOSSIP REGISTERED. METRO LEASE LEASED.');
     await new Promise(r => setTimeout(r, 600));
