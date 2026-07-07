@@ -499,6 +499,12 @@ export const supabase = {
                     mockDatabase.saveState();
                   }
                 }
+              } else if (table === 'posts') {
+                const post = mockDatabase.posts.find((p: any) => p[col] === val);
+                if (post && values.caption !== undefined) {
+                  post.caption = values.caption;
+                  mockDatabase.saveState();
+                }
               }
               resolve({ data: null, error: null });
               return Promise.resolve({ data: null, error: null });
