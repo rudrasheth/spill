@@ -7,7 +7,7 @@ create extension if not exists "uuid-ossp";
 
 -- 1. USERS PROFILE TABLE
 -- Linked directly to Supabase Auth user accounts
-create table users (
+create table if not exists users (
   id uuid primary key references auth.users(id) on delete cascade,
   alias text unique not null check (char_length(alias) >= 3),
   real_identity text not null, -- Private email/phone used during OTP/invite verification
@@ -16,7 +16,7 @@ create table users (
 );
 
 -- 2. SPILL POSTS TABLE
-create table posts (
+create table if not exists posts (
   id uuid primary key default gen_random_uuid(),
   author_id uuid references users(id) on delete cascade,
   image_url text not null, -- Storage path or base64 data URI
@@ -30,7 +30,7 @@ create table posts (
 
 -- 3. UNLOCKS LEDGER TABLE
 -- Tracks which user unlocked which post
-create table unlocks (
+create table if not exists unlocks (
   id uuid primary key default gen_random_uuid(),
   post_id uuid references posts(id) on delete cascade,
   unlocker_id uuid references users(id) on delete cascade,
@@ -40,7 +40,7 @@ create table unlocks (
 
 -- 4. REPORTS TABLE
 -- Tracks flags on posts; automatically increments reported_count
-create table reports (
+create table if not exists reports (
   id uuid primary key default gen_random_uuid(),
   post_id uuid references posts(id) on delete cascade,
   reporter_id uuid references users(id) on delete cascade,
@@ -59,45 +59,55 @@ alter table unlocks enable row level security;
 alter table reports enable row level security;
 
 -- USERS POLICIES
+drop policy if exists "Public profile read access" on users;
 create policy "Public profile read access" 
   on users for select 
   using (true); -- Required to map aliases and show balances for other feed/post authors
 
+drop policy if exists "Users can insert their own profile" on users;
 create policy "Users can insert their own profile" 
   on users for insert 
   with check (auth.uid() = id);
 
+drop policy if exists "Users can update their own profile" on users;
 create policy "Users can update their own profile"
   on users for update
   using (auth.uid() = id);
 
 -- POSTS POLICIES
+drop policy if exists "Anyone can read non-flagged active posts" on posts;
 create policy "Anyone can read non-flagged active posts" 
   on posts for select 
   using (reported_count < 1 and (expires_at is null or expires_at > now()));
 
+drop policy if exists "Users can insert their own posts" on posts;
 create policy "Users can insert their own posts" 
   on posts for insert 
   with check (auth.uid() = author_id);
 
+drop policy if exists "Authors can delete/modify their own posts" on posts;
 create policy "Authors can delete/modify their own posts"
   on posts for delete
   using (auth.uid() = author_id);
 
 -- UNLOCKS POLICIES
+drop policy if exists "Users can read all unlocks" on unlocks;
 create policy "Users can read all unlocks" 
   on unlocks for select 
   using (true);
 
+drop policy if exists "Users can insert their own unlocks" on unlocks;
 create policy "Users can insert their own unlocks" 
   on unlocks for insert 
   with check (auth.uid() = unlocker_id);
 
 -- REPORTS POLICIES
+drop policy if exists "Users can insert abuse reports" on reports;
 create policy "Users can insert abuse reports" 
   on reports for insert 
   with check (auth.uid() = reporter_id);
 
+drop policy if exists "Operators can read reports" on reports;
 create policy "Operators can read reports" 
   on reports for select 
   using (true); -- Restrict to admin roles in real production if needed
@@ -170,6 +180,7 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists tr_on_report_added on reports;
 create trigger tr_on_report_added
 after insert on reports
 for each row
