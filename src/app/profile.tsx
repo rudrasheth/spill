@@ -214,9 +214,7 @@ export default function ProfileScreen() {
                 REAL ID: {me?.real_identity || 'Anonymous User'}
               </Text>
             </View>
-            </View>
           </View>
-
           <Pressable 
             style={{
               backgroundColor: 'rgba(255, 59, 92, 0.1)',
