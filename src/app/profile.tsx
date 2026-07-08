@@ -214,10 +214,29 @@ export default function ProfileScreen() {
                 REAL ID: {me?.real_identity || 'Anonymous User'}
               </Text>
             </View>
-            <Pressable style={styles.signOutBtn} onPress={handleSignOut} id="btn-profile-signout">
-              <LogOut size={16} color="#FF3B5C" />
-            </Pressable>
+            </View>
           </View>
+
+          <Pressable 
+            style={{
+              backgroundColor: 'rgba(255, 59, 92, 0.1)',
+              paddingVertical: 10,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 59, 92, 0.3)',
+              flexDirection: 'row',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: Spacing.four,
+            }} 
+            onPress={handleSignOut} 
+            id="btn-profile-signout"
+          >
+            <LogOut size={16} color="#FF3B5C" style={{ marginRight: 8 }} />
+            <Text style={{ color: '#FF3B5C', fontFamily: 'Inter', fontWeight: 'bold', fontSize: 13 }}>
+              SIGN OUT OF SESSION
+            </Text>
+          </Pressable>
 
           <View style={styles.statGrid}>
             <View style={styles.gridBox}>
