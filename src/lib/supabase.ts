@@ -118,6 +118,8 @@ export interface Post {
   created_at: string;
   expires_at: string | null; // expiration date-time, nullable
   reported_count: number;
+  module: 'student' | 'office' | 'other';
+  tag: 'relationship' | 'money_career' | 'chaos';
 }
 
 export interface Unlock {

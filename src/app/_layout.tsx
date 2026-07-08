@@ -10,12 +10,15 @@ import {
   useWindowDimensions,
   Platform,
   ActivityIndicator,
+  TextInput,
+  ScrollView,
 } from 'react-native';
-import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X, AlertCircle, CheckCircle, Info } from 'lucide-react-native';
+import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X, AlertCircle, CheckCircle, Info, Lock, Key, User, Sparkles, ChevronRight, ChevronLeft } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
+import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 import { registerAlertListener, AlertType } from '@/lib/alert';
+import { getSecureItem, setSecureItem } from '@/lib/secure-store';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -47,9 +50,115 @@ export default function RootLayout() {
     type: 'info',
   });
 
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [needProfileSetup, setNeedProfileSetup] = useState(false);
+  const [needQuiz, setNeedQuiz] = useState(false);
+
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isVerifyingPass, setIsVerifyingPass] = useState(false);
+
+  const [aliasInput, setAliasInput] = useState('');
+  const [selectedAvatar, setSelectedAvatar] = useState('🕵️');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const AVATARS = ['🕵️', '🦊', '🐱', '🐼', '🦁', '🐸', '🐙', '🦄', '🦖', '🤖', '👻', '👾'];
+
+  const [quizStep, setQuizStep] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<any>({
+    module: 'other',
+    role: 'lurker',
+    poison: 'chaos',
+    spend: 'anything_goes',
+    vibe: '😌 Chill lurker'
+  });
+
+  const QUIZ_QUESTIONS = [
+    {
+      title: "Which module are you most here for?",
+      key: "module",
+      options: [
+        { label: "Student Life (Gossip & School Drama)", value: "student" },
+        { label: "Office Life (Work & Career Rumors)", value: "office" },
+        { label: "Others (Random Spills & Chaos)", value: "other" }
+      ]
+    },
+    {
+      title: "What's your gossip style?",
+      key: "role",
+      options: [
+        { label: "Instigator (I love starting the drama)", value: "instigator" },
+        { label: "Lurker (I just like to read the tea)", value: "lurker" },
+        { label: "Reporter (I love posting verified facts)", value: "reporter" }
+      ]
+    },
+    {
+      title: "Pick your poison:",
+      key: "poison",
+      options: [
+        { label: "Relationship drama", value: "relationship" },
+        { label: "Money & career rumors", value: "money_career" },
+        { label: "Random workplace chaos", value: "chaos" }
+      ]
+    },
+    {
+      title: "How juicy does it have to be for you to spend tokens?",
+      key: "spend",
+      options: [
+        { label: "Anything goes! (Unlock all)", value: "anything_goes" },
+        { label: "Only A-tier drama (Selective unlocking)", value: "only_a_tier" },
+        { label: "Rarely unlock (Saver mode)", value: "rarely_unlock" }
+      ]
+    },
+    {
+      title: "Pick a vibe:",
+      key: "vibe",
+      options: [
+        { label: "🔥 Chaotic (Bring the fire)", value: "🔥 Chaotic" },
+        { label: "🕵️ Investigative (Fact finder)", value: "🕵️ Investigative" },
+        { label: "😌 Chill lurker (Zen observer)", value: "😌 Chill lurker" }
+      ]
+    }
+  ];
+
+  const checkOnboarding = async () => {
+    try {
+      const isVerified = await getSecureItem('spill_password_verified');
+      if (isVerified === 'true') {
+        setIsPasswordVerified(true);
+        const profile = await getCurrentUserProfile();
+        if (profile) {
+          setUserProfile(profile);
+          const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
+          
+          if (hasDefaultAlias || !profile.avatar) {
+            setNeedProfileSetup(true);
+            setNeedQuiz(profile.role == null);
+          } else if (profile.role == null) {
+            setNeedProfileSetup(false);
+            setNeedQuiz(true);
+          } else {
+            setNeedProfileSetup(false);
+            setNeedQuiz(false);
+          }
+        } else {
+          setIsPasswordVerified(false);
+        }
+      } else {
+        setIsPasswordVerified(false);
+      }
+    } catch (e) {
+      console.error("[Onboarding] check error:", e);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
   useEffect(() => {
     setMounted(true);
     SplashScreen.hideAsync().catch(() => {});
+
+    checkOnboarding();
 
     const unsubscribe = registerAlertListener(({ message, title, type }) => {
       setAlertConfig({
@@ -60,12 +169,354 @@ export default function RootLayout() {
       });
     });
 
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setIsPasswordVerified(false);
+        setNeedProfileSetup(false);
+        setNeedQuiz(false);
+        setUserProfile(null);
+      } else {
+        checkOnboarding();
+      }
+    });
+
     return () => {
       unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
+  const handleVerifyPassword = async (pass: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('verify-password', {
+        body: { password: pass }
+      });
+      if (error || !data) {
+        setAlertConfig({
+          visible: true,
+          title: "Access Denied",
+          message: error?.message || "Verification failed.",
+          type: "error"
+        });
+        return;
+      }
+      if (data.success) {
+        await setSecureItem('spill_password_verified', 'true');
+        await checkOnboarding();
+      } else {
+        setAlertConfig({
+          visible: true,
+          title: "Access Denied",
+          message: "Incorrect security clearance passcode.",
+          type: "error"
+        });
+      }
+    } catch (e: any) {
+      setAlertConfig({
+        visible: true,
+        title: "Error",
+        message: e.message || "An unexpected error occurred.",
+        type: "error"
+      });
+    }
+  };
+
+  const handleQuizAnswer = (key: string, value: string) => {
+    const nextAnswers = { ...quizAnswers, [key]: value };
+    setQuizAnswers(nextAnswers);
+    if (quizStep < QUIZ_QUESTIONS.length - 1) {
+      setQuizStep(quizStep + 1);
+    } else {
+      submitQuiz(nextAnswers);
+    }
+  };
+
+  const submitQuiz = async (answers: any) => {
+    try {
+      const { error: userErr } = await supabase
+        .from('users')
+        .update({
+          role: answers.role,
+          spend_threshold: answers.spend,
+          badge: answers.vibe
+        })
+        .eq('id', userProfile.id);
+
+      if (userErr) throw userErr;
+
+      const tags = ['student', 'office', 'other', 'relationship', 'money_career', 'chaos'];
+      const affinityRows = tags.map(t => {
+        let score = 1.0;
+        if (t === answers.module) score = 5.0;
+        if (t === answers.poison) score = 5.0;
+        return {
+          user_id: userProfile.id,
+          tag: t,
+          affinity_score: score
+        };
+      });
+
+      await supabase.from('user_tag_affinity').delete().eq('user_id', userProfile.id);
+      const { error: affinityErr } = await supabase
+        .from('user_tag_affinity')
+        .insert(affinityRows);
+
+      if (affinityErr) throw affinityErr;
+
+      await checkOnboarding();
+    } catch (e: any) {
+      setAlertConfig({
+        visible: true,
+        title: "Quiz Save Failed",
+        message: e.message || "Failed to initialize cognitive affinities.",
+        type: "error"
+      });
+    }
+  };
+
+  const handleSkipQuiz = async () => {
+    const defaultAnswers = {
+      module: 'other',
+      role: 'lurker',
+      poison: 'chaos',
+      spend: 'anything_goes',
+      vibe: '😌 Chill lurker'
+    };
+    await submitQuiz(defaultAnswers);
+  };
+
+  const renderPasswordLogin = () => (
+    <View style={styles.onboardingContainer}>
+      <View style={styles.onboardingCard}>
+        <View style={styles.iconCircle}>
+          <Lock size={24} color="#FF3B5C" />
+        </View>
+        <Text style={styles.onboardingTitle}>DECRYPT SPILL NETWORK</Text>
+        <Text style={styles.onboardingSubtitle}>
+          Enter the shared passcode to decrypt and access this private group intelligence feed.
+        </Text>
+
+        <TextInput
+          style={styles.onboardingInput}
+          placeholder="Secure passcode"
+          placeholderTextColor="#8A8A8A"
+          secureTextEntry
+          value={passwordInput}
+          onChangeText={setPasswordInput}
+          onSubmitEditing={async () => {
+            if (isVerifyingPass) return;
+            setIsVerifyingPass(true);
+            await handleVerifyPassword(passwordInput);
+            setIsVerifyingPass(false);
+          }}
+          autoFocus
+        />
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.onboardingBtn,
+            pressed && styles.pressed,
+            isVerifyingPass && styles.disabledBtn
+          ]}
+          onPress={async () => {
+            if (isVerifyingPass) return;
+            setIsVerifyingPass(true);
+            await handleVerifyPassword(passwordInput);
+            setIsVerifyingPass(false);
+          }}
+          disabled={isVerifyingPass}
+        >
+          {isVerifyingPass ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Key size={14} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.onboardingBtnText}>VERIFY CLEARANCE</Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const renderProfileSetup = () => (
+    <View style={styles.onboardingContainer}>
+      <View style={styles.onboardingCard}>
+        <View style={styles.iconCircle}>
+          <User size={24} color="#FF3B5C" />
+        </View>
+        <Text style={styles.onboardingTitle}>ESTABLISH SECURE ALIAS</Text>
+        <Text style={styles.onboardingSubtitle}>
+          Choose an alias and a visual key so friends can recognize you without knowing your real identity.
+        </Text>
+
+        <Text style={styles.inputLabel}>YOUR AGENT ALIAS</Text>
+        <TextInput
+          style={styles.onboardingInput}
+          placeholder="e.g. TeaSpiller_42"
+          placeholderTextColor="#8A8A8A"
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={aliasInput}
+          onChangeText={setAliasInput}
+        />
+
+        <Text style={styles.inputLabel}>CHOOSE AVATAR VISUAL KEY</Text>
+        <View style={styles.avatarGrid}>
+          {AVATARS.map((emoji) => (
+            <Pressable
+              key={emoji}
+              style={[
+                styles.avatarItem,
+                selectedAvatar === emoji && styles.avatarItemSelected
+              ]}
+              onPress={() => setSelectedAvatar(emoji)}
+            >
+              <Text style={styles.avatarEmoji}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.onboardingBtn,
+            pressed && styles.pressed,
+            isSavingProfile && styles.disabledBtn
+          ]}
+          onPress={async () => {
+            if (isSavingProfile) return;
+            if (aliasInput.trim().length < 3) {
+              setAlertConfig({
+                visible: true,
+                title: "Invalid Alias",
+                message: "Alias must be at least 3 characters.",
+                type: "error"
+              });
+              return;
+            }
+            setIsSavingProfile(true);
+            try {
+              const { error } = await supabase
+                .from('users')
+                .update({
+                  alias: aliasInput.trim(),
+                  avatar: selectedAvatar
+                })
+                .eq('id', userProfile.id);
+
+              if (error) {
+                if (error.message.includes('unique')) {
+                  setAlertConfig({
+                    visible: true,
+                    title: "Alias Taken",
+                    message: "This alias is already claimed by another agent. Choose a different one.",
+                    type: "error"
+                  });
+                } else {
+                  setAlertConfig({
+                    visible: true,
+                    title: "Setup Failed",
+                    message: error.message || "Failed to update profile.",
+                    type: "error"
+                  });
+                }
+              } else {
+                await checkOnboarding();
+              }
+            } catch (e: any) {
+              setAlertConfig({
+                visible: true,
+                title: "Error",
+                message: e.message || "An unexpected error occurred.",
+                type: "error"
+              });
+            } finally {
+              setIsSavingProfile(false);
+            }
+          }}
+          disabled={isSavingProfile}
+        >
+          {isSavingProfile ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Sparkles size={14} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.onboardingBtnText}>ESTABLISH IDENTITY</Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const renderPersonalityQuiz = () => {
+    const currentQuestion = QUIZ_QUESTIONS[quizStep];
+    return (
+      <View style={styles.onboardingContainer}>
+        <View style={styles.onboardingCard}>
+          <View style={styles.quizHeaderRow}>
+            {quizStep > 0 && (
+              <Pressable onPress={() => setQuizStep(quizStep - 1)} style={styles.quizBackBtn}>
+                <ChevronLeft size={16} color="#8A8A8A" />
+              </Pressable>
+            )}
+            <Text style={styles.quizProgressText}>
+              ALIGNMENT INTERVIEW PHASE 0{quizStep + 1}
+            </Text>
+            <View style={{ width: 16 }} />
+          </View>
+
+          <Text style={styles.onboardingTitle}>{currentQuestion.title}</Text>
+          <Text style={styles.onboardingSubtitle}>
+            Your response determines feed prioritization and initial agent tuning.
+          </Text>
+
+          <View style={styles.optionsContainer}>
+            {currentQuestion.options.map((opt) => (
+              <Pressable
+                key={opt.value}
+                style={({ pressed }) => [
+                  styles.optionBtn,
+                  pressed && styles.pressed
+                ]}
+                onPress={() => handleQuizAnswer(currentQuestion.key, opt.value)}
+              >
+                <Text style={styles.optionBtnText}>{opt.label}</Text>
+                <ChevronRight size={14} color="#FF3B5C" />
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable onPress={handleSkipQuiz} style={styles.skipBtn}>
+            <Text style={styles.skipBtnText}>Skip Interview & Use Default Tuning</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   if (!mounted) return null;
+
+  if (isCheckingAuth) {
+    return (
+      <View style={styles.onboardingContainer}>
+        <ActivityIndicator size="large" color="#FF3B5C" />
+        <Text style={styles.loadingText}>AUTHORIZING NETWORK ACCESS...</Text>
+      </View>
+    );
+  }
+
+  if (!isPasswordVerified) {
+    return renderPasswordLogin();
+  }
+
+  if (needProfileSetup) {
+    return renderProfileSetup();
+  }
+
+  if (needQuiz) {
+    return renderPersonalityQuiz();
+  }
 
   const buttons = [
     { name: 'Feed',   path: '/',        icon: Flame    },
@@ -266,13 +717,13 @@ const styles = StyleSheet.create({
   desktopContainer: {
     flexDirection: 'row',
     flex: 1,
-    height: Platform.OS === 'web' ? '100vh' : '100%',
+    height: '100%',
     backgroundColor: '#FFFFFF',
   },
   mobileContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    height: Platform.OS === 'web' ? '100dvh' : '100%',
+    height: '100%',
   },
 
   // ── Sidebar ─────────────────────────────────────────
@@ -516,4 +967,179 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 1,
   },
-});
+  onboardingContainer: {
+    flex: 1,
+    backgroundColor: '#0E0E10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.four,
+  },
+  loadingText: {
+    color: '#8A8A8A',
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 10,
+    marginTop: 12,
+    letterSpacing: 1.5,
+  },
+  onboardingCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'rgba(25, 25, 28, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 92, 0.15)',
+    borderRadius: 20,
+    padding: Spacing.six,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+    elevation: 8,
+  },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255, 59, 92, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.four,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 92, 0.2)',
+  },
+  onboardingTitle: {
+    fontFamily: 'Outfit',
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  onboardingSubtitle: {
+    fontFamily: 'Inter',
+    fontSize: 12.5,
+    color: '#8A8A8A',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: Spacing.five,
+  },
+  inputLabel: {
+    alignSelf: 'flex-start',
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: '#FF3B5C',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  onboardingInput: {
+    width: '100%',
+    height: 46,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    color: '#FFFFFF',
+    fontFamily: 'Inter',
+    fontSize: 14,
+    marginBottom: Spacing.four,
+  },
+  onboardingBtn: {
+    width: '100%',
+    height: 46,
+    backgroundColor: '#FF3B5C',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  disabledBtn: {
+    opacity: 0.6,
+  },
+  onboardingBtnText: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
+  },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+    marginBottom: Spacing.five,
+  },
+  avatarItem: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarItemSelected: {
+    borderColor: '#FF3B5C',
+    backgroundColor: 'rgba(255, 59, 92, 0.1)',
+  },
+  avatarEmoji: {
+    fontSize: 20,
+  },
+  quizHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: Spacing.three,
+  },
+  quizBackBtn: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quizProgressText: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 8.5,
+    fontWeight: 'bold',
+    color: '#FF3B5C',
+    letterSpacing: 1.5,
+  },
+  optionsContainer: {
+    width: '100%',
+    gap: 10,
+    marginBottom: Spacing.five,
+  },
+  optionBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  optionBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  skipBtn: {
+    paddingVertical: 8,
+  },
+  skipBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: '#8A8A8A',
+    textDecorationLine: 'underline',
+  },
+}) as any;

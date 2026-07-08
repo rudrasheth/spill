@@ -12,7 +12,19 @@ create table if not exists users (
   alias text unique not null check (char_length(alias) >= 3),
   real_identity text not null, -- Private email/phone used during OTP/invite verification
   token_balance integer not null default 10 check (token_balance >= 0),
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  avatar text,
+  role text check (role in ('instigator', 'lurker', 'reporter')),
+  spend_threshold text check (spend_threshold in ('anything_goes', 'only_a_tier', 'rarely_unlock')),
+  badge text
+);
+
+-- 1.5 USER TAG AFFINITY TABLE
+create table if not exists user_tag_affinity (
+  user_id uuid references users(id) on delete cascade,
+  tag text not null,
+  affinity_score float not null default 0.0,
+  primary key (user_id, tag)
 );
 
 -- 2. SPILL POSTS TABLE
@@ -29,7 +41,9 @@ create table if not exists posts (
   -- AI moderation status — controls feed visibility
   moderation_status text not null default 'approved'
     check (moderation_status in ('approved', 'pending_review', 'rejected')),
-  moderation_category text default null -- what the AI flagged, for operator context
+  moderation_category text default null, -- what the AI flagged, for operator context
+  module text check (module in ('student', 'office', 'other')) not null default 'other',
+  tag text check (tag in ('relationship', 'money_career', 'chaos')) not null default 'chaos'
 );
 
 -- 3. UNLOCKS LEDGER TABLE
@@ -111,6 +125,7 @@ create table if not exists moderation_flags (
 -- =====================================================================
 
 alter table users enable row level security;
+alter table user_tag_affinity enable row level security;
 alter table posts enable row level security;
 alter table unlocks enable row level security;
 alter table reports enable row level security;
@@ -118,6 +133,18 @@ alter table group_messages enable row level security;
 alter table groups enable row level security;
 alter table group_members enable row level security;
 alter table moderation_flags enable row level security;
+
+-- USER TAG AFFINITY POLICIES
+drop policy if exists "Users can read their own tag affinity" on user_tag_affinity;
+create policy "Users can read their own tag affinity"
+  on user_tag_affinity for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users can manage their own tag affinity" on user_tag_affinity;
+create policy "Users can manage their own tag affinity"
+  on user_tag_affinity for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- USERS POLICIES
 drop policy if exists "Public profile read access" on users;

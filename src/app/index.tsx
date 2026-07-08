@@ -32,6 +32,9 @@ export default function GossipFeedScreen() {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editCaption, setEditCaption] = useState('');
 
+  const [affinitiesMap, setAffinitiesMap] = useState<Record<string, number>>({});
+  const [activeModuleFilter, setActiveModuleFilter] = useState<'all' | 'student' | 'office' | 'other'>('all');
+
   let numCols = 1;
   if (width >= 1024) numCols = 3;
   else if (width >= 768) numCols = 2;
@@ -54,6 +57,61 @@ export default function GossipFeedScreen() {
       usersData.forEach((u: any) => map[u.id] = u.alias);
       setAuthorsMap(map);
     }
+
+    // Fetch user tag affinities
+    const { data: affinitiesData } = await supabase.from('user_tag_affinity').select('*').eq('user_id', me.id);
+    if (affinitiesData) {
+      const affMap: Record<string, number> = {};
+      affinitiesData.forEach((a: any) => {
+        affMap[a.tag] = a.affinity_score;
+      });
+      setAffinitiesMap(affMap);
+    }
+  };
+
+  const getPersonalizedPosts = () => {
+    // 1. Filter by active module
+    let filtered = posts;
+    if (activeModuleFilter !== 'all') {
+      filtered = posts.filter(p => p.module === activeModuleFilter);
+    }
+
+    // 2. Score each post
+    const scored = filtered.map(post => {
+      let score = 0;
+
+      // Tag affinity score
+      const tagAff = affinitiesMap[post.tag] || 1.0;
+      score += tagAff;
+
+      // Module affinity score
+      const modAff = affinitiesMap[post.module] || 1.0;
+      score += modAff;
+
+      // Spend threshold adjustments
+      const price = post.unlock_price || 0;
+      const spend = currentUser?.spend_threshold;
+      if (spend === 'only_a_tier') {
+        if (price > 5) {
+          score -= 2.0; // penalty for expensive posts unless tag affinity is very high
+        }
+      } else if (spend === 'rarely_unlock') {
+        if (price > 3) {
+          score -= (price - 3) * 1.5; // heavy penalty for more expensive posts
+        }
+      }
+
+      // Time decay: newer posts get higher relevance
+      const ageHours = (Date.now() - new Date(post.created_at).getTime()) / (3600 * 1000);
+      score -= ageHours * 0.25;
+
+      return { post, score };
+    });
+
+    // 3. Sort by score descending
+    scored.sort((a, b) => b.score - a.score);
+
+    return scored.map(item => item.post);
   };
 
   useEffect(() => {
@@ -110,12 +168,22 @@ export default function GossipFeedScreen() {
           <View style={styles.authorBadge}>
             <Text style={styles.badgeText}>{authorAlias.substring(1, 3).toUpperCase()}</Text>
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.authorName}>{authorAlias}</Text>
             <View style={styles.statusRow}>
               <View style={styles.statusIndicator} />
               <Text style={styles.statusText}>VERIFIED GROUP AGENT</Text>
             </View>
+          </View>
+          <View style={styles.postBadges}>
+            <View style={styles.postModuleBadgeContainer}>
+              <Text style={styles.postModuleBadgeText}>
+                {item.module === 'student' ? 'Student' : item.module === 'office' ? 'Office' : 'Other'}
+              </Text>
+            </View>
+            <Text style={styles.postTagText}>
+              #{item.tag === 'relationship' ? 'Relationship' : item.tag === 'money_career' ? 'Money' : 'Chaos'}
+            </Text>
           </View>
         </View>
 
@@ -212,6 +280,8 @@ export default function GossipFeedScreen() {
     );
   };
 
+  const personalizedPosts = getPersonalizedPosts();
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
@@ -222,10 +292,38 @@ export default function GossipFeedScreen() {
         <Text style={styles.dateText}>{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</Text>
       </View>
 
+      <View style={styles.moduleSwitcher}>
+        {([
+          { label: 'All Spills', value: 'all' },
+          { label: 'Student Life', value: 'student' },
+          { label: 'Office Life', value: 'office' },
+          { label: 'Others', value: 'other' }
+        ] as const).map((item) => (
+          <Pressable
+            key={item.value}
+            style={[
+              styles.switcherTab,
+              activeModuleFilter === item.value && styles.switcherTabActive
+            ]}
+            onPress={() => setActiveModuleFilter(item.value)}
+            id={`btn-feed-module-${item.value}`}
+          >
+            <Text
+              style={[
+                styles.switcherTabText,
+                activeModuleFilter === item.value && styles.switcherTabTextActive
+              ]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <FlatList
         key={numCols}
         numColumns={numCols}
-        data={posts}
+        data={personalizedPosts}
         keyExtractor={(item) => item.id}
         renderItem={renderPostCard}
         showsVerticalScrollIndicator={false}
@@ -237,9 +335,9 @@ export default function GossipFeedScreen() {
           </View>
         }
         ListFooterComponent={
-          posts.length > 0 ? (
+          personalizedPosts.length > 0 ? (
             <View style={styles.statsBar}>
-              <Text style={styles.statsText}>Workspace secure — {posts.length} spills active</Text>
+              <Text style={styles.statsText}>Workspace secure — {personalizedPosts.length} spills active</Text>
             </View>
           ) : undefined
         }
@@ -500,5 +598,63 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
+  },
+  moduleSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#F5F5F5',
+    marginHorizontal: Spacing.four,
+    marginTop: Spacing.three,
+    marginBottom: Spacing.one,
+    padding: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+  },
+  switcherTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  switcherTabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  switcherTabText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#8A8A8A',
+  },
+  switcherTabTextActive: {
+    color: '#1A1A1A',
+  },
+  postBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  postModuleBadgeContainer: {
+    backgroundColor: 'rgba(255, 59, 92, 0.08)',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 59, 92, 0.2)',
+  },
+  postModuleBadgeText: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FF3B5C',
+  },
+  postTagText: {
+    fontFamily: 'Inter',
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#8A8A8A',
   },
 });

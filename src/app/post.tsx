@@ -40,6 +40,8 @@ export default function PostCreationScreen() {
   const [unlockPrice, setUnlockPrice] = useState(5);
   const [selectedMediaKey, setSelectedMediaKey] = useState<keyof typeof SEED_IMAGES>('classified_dossier');
   const [customImageUri, setCustomImageUri] = useState<string | null>(null);
+  const [selectedModule, setSelectedModule] = useState<'student' | 'office' | 'other'>('other');
+  const [selectedTag, setSelectedTag] = useState<'relationship' | 'money_career' | 'chaos'>('chaos');
   
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
@@ -225,7 +227,9 @@ export default function PostCreationScreen() {
         unlock_price: unlockPrice,
         expires_at: expiresAt,
         moderation_status: moderationStatus,
-        moderation_category: moderationCategory
+        moderation_category: moderationCategory,
+        module: selectedModule,
+        tag: selectedTag
       }]);
 
       await supabase.from('users').update({ token_balance: me.token_balance + 3 }).eq('id', me.id);
@@ -347,6 +351,51 @@ export default function PostCreationScreen() {
                 id="input-gossip-caption"
               />
               <Text style={styles.charCount}>{caption.length}/280</Text>
+            </View>
+          </View>
+
+          {/* Section 2.5: Destination Module & Category Tag */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>SELECT DESTINATION MODULE</Text>
+            <View style={styles.moduleRow}>
+              {([
+                { label: 'Student Life', value: 'student' },
+                { label: 'Office Life', value: 'office' },
+                { label: 'Others', value: 'other' }
+              ] as const).map((m) => (
+                <Pressable
+                  key={m.value}
+                  style={[styles.moduleBtn, selectedModule === m.value && styles.moduleBtnActive]}
+                  onPress={() => setSelectedModule(m.value)}
+                  id={`btn-module-${m.value}`}
+                >
+                  <Text style={[styles.moduleBtnText, selectedModule === m.value && styles.moduleBtnTextActive]}>
+                    {m.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionLabel}>GOSSIP CATEGORY TAG</Text>
+            <View style={styles.categoryRow}>
+              {([
+                { label: 'Relationship Drama', value: 'relationship' },
+                { label: 'Money & Career', value: 'money_career' },
+                { label: 'Random Chaos', value: 'chaos' }
+              ] as const).map((t) => (
+                <Pressable
+                  key={t.value}
+                  style={[styles.categoryBtn, selectedTag === t.value && styles.categoryBtnActive]}
+                  onPress={() => setSelectedTag(t.value)}
+                  id={`btn-tag-${t.value}`}
+                >
+                  <Text style={[styles.categoryBtnText, selectedTag === t.value && styles.categoryBtnTextActive]}>
+                    {t.label}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           </View>
 
@@ -676,5 +725,61 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
+  },
+  moduleRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  moduleBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moduleBtnActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  moduleBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: T.muted,
+    textAlign: 'center',
+  },
+  moduleBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  categoryBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBtnActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  categoryBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: T.muted,
+    textAlign: 'center',
+  },
+  categoryBtnTextActive: {
+    color: '#FFFFFF',
   },
 });

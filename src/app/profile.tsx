@@ -16,6 +16,7 @@ import { router } from 'expo-router';
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 import { showAlert } from '@/lib/alert';
+import { removeSecureItem } from '@/lib/secure-store';
 
 const SEED_IMAGES = {
   classified_dossier: require('@/assets/images/classified_dossier.png'),
@@ -90,6 +91,17 @@ export default function ProfileScreen() {
       setEditingAlias(me.alias);
     }
   }, [me?.id]);
+
+  const handleSignOut = async () => {
+    try {
+      await removeSecureItem('spill_password_verified');
+      await supabase.auth.signOut();
+      showAlert('Signed out of session successfully.', 'Signed Out', 'success');
+      router.replace('/');
+    } catch (e: any) {
+      showAlert(e.message || 'Logout failed.', 'Logout Error', 'error');
+    }
+  };
 
   const handleUpdateAlias = async () => {
     if (!editingAlias.trim()) {
@@ -177,7 +189,11 @@ export default function ProfileScreen() {
         <View style={styles.profileCard}>
           <View style={styles.avatarRow}>
             <View style={styles.avatarPlaceholder}>
-              <User size={24} color="#FF3B5C" />
+              {me?.avatar ? (
+                <Text style={{ fontSize: 24 }}>{me.avatar}</Text>
+              ) : (
+                <User size={24} color="#FF3B5C" />
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -198,13 +214,32 @@ export default function ProfileScreen() {
                 REAL ID: {me?.real_identity || 'Anonymous User'}
               </Text>
             </View>
+            <Pressable style={styles.signOutBtn} onPress={handleSignOut} id="btn-profile-signout">
+              <LogOut size={16} color="#FF3B5C" />
+            </Pressable>
           </View>
 
           <View style={styles.statGrid}>
             <View style={styles.gridBox}>
               <Text style={styles.gridLabel}>ROLE</Text>
-              <Text style={styles.gridValue}>Group Member</Text>
+              <Text style={styles.gridValue}>
+                {me?.role ? me.role.charAt(0).toUpperCase() + me.role.slice(1) : 'Lurker'}
+              </Text>
             </View>
+            <View style={styles.gridBox}>
+              <Text style={styles.gridLabel}>VIBE BADGE</Text>
+              <Text style={styles.gridValue}>{me?.badge || '😌 Chill lurker'}</Text>
+            </View>
+            <View style={styles.gridBox}>
+              <Text style={styles.gridLabel}>SPEND TIER</Text>
+              <Text style={styles.gridValue}>
+                {me?.spend_threshold === 'anything_goes' ? 'Anything' :
+                 me?.spend_threshold === 'only_a_tier' ? 'A-Tier Only' : 'Rarely'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.statGrid, { marginTop: Spacing.two }]}>
             <View style={styles.gridBox}>
               <Text style={styles.gridLabel}>SUBMITTED</Text>
               <Text style={styles.gridValue}>{postsCount} Spills</Text>
@@ -212,6 +247,10 @@ export default function ProfileScreen() {
             <View style={styles.gridBox}>
               <Text style={styles.gridLabel}>UNLOCKED</Text>
               <Text style={styles.gridValue}>{unlocksCount} Spills</Text>
+            </View>
+            <View style={styles.gridBox}>
+              <Text style={styles.gridLabel}>TOKENS</Text>
+              <Text style={[styles.gridValue, { color: '#E8B23D' }]}>{me?.token_balance} TK</Text>
             </View>
           </View>
         </View>
