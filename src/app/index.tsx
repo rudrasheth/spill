@@ -14,6 +14,7 @@ import { Lock, Unlock, Eye, HelpCircle, Edit2, Check, X } from 'lucide-react-nat
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile, Post } from '@/lib/supabase';
+import { showAlert } from '@/lib/alert';
 
 const SEED_IMAGES: Record<string, any> = {
   classified_dossier: require('@/assets/images/classified_dossier.png'),
@@ -64,14 +65,14 @@ export default function GossipFeedScreen() {
   const handleUnlockPost = async (postId: string, price: number) => {
     if (!currentUser) return;
     if (currentUser.token_balance < price) {
-      alert('Insufficient token balance. Head to the Wallet tab to load up.');
+      showAlert('Insufficient token balance. Head to the Wallet tab to load up.', 'Insufficient Balance', 'error');
       return;
     }
     try {
       await supabase.rpc('unlock_post', { p_post_id: postId, p_user_id: currentUser.id });
       loadFeedData();
     } catch (err: any) {
-      alert(err.message || 'Unlock failed');
+      showAlert(err.message || 'Unlock failed', 'Unlock Failed', 'error');
     }
   };
 
@@ -82,7 +83,7 @@ export default function GossipFeedScreen() {
       setEditingPostId(null);
       loadFeedData();
     } catch (err: any) {
-      alert(err.message || 'Edit failed');
+      showAlert(err.message || 'Edit failed', 'Edit Failed', 'error');
     }
   };
 

@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
+import { showAlert } from '@/lib/alert';
 
 const T = {
   brand: '#FF3B5C',
@@ -79,13 +80,13 @@ export default function PostCreationScreen() {
 
   const handlePublish = async () => {
     if (!caption.trim()) { 
-      alert('Gossip text cannot be empty.'); 
+      showAlert('Gossip text cannot be empty.', 'Empty Gossip', 'error'); 
       return; 
     }
     
     const me = await getCurrentUserProfile();
     if (!me) {
-      alert('Authentication required.');
+      showAlert('Authentication required.', 'Authentication Required', 'error');
       return;
     }
 

@@ -12,6 +12,7 @@ import { Ticket, ArrowUpRight, ArrowDownLeft, Flame, Info, TrendingDown } from '
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
+import { showAlert } from '@/lib/alert';
 
 const T = {
   brand: '#FF3B5C',
@@ -97,7 +98,7 @@ export default function WalletScreen() {
       const newBalance = me.token_balance + amount;
       await supabase.from('users').update({ token_balance: newBalance }).eq('id', me.id);
       loadWalletData();
-      alert(`Successfully acquired ${amount} tokens (${desc}).`);
+      showAlert(`Successfully acquired ${amount} tokens (${desc}).`, 'Tokens Acquired', 'success');
     }
   };
 
@@ -148,7 +149,7 @@ export default function WalletScreen() {
                 styles.packageCard,
                 pressed && styles.pressed,
               ]}
-              onPress={() => handleBuyTokens(pkg.amount)}
+              onPress={() => handleBuyTokens(pkg.amount, pkg.desc)}
               id={`btn-buy-package-${pkg.amount}`}
             >
               <View style={styles.packageHeader}>

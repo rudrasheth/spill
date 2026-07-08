@@ -11,10 +11,11 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X } from 'lucide-react-native';
+import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X, AlertCircle, CheckCircle, Info } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { registerAlertListener, AlertType } from '@/lib/alert';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -34,10 +35,34 @@ export default function RootLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isDesktop = width >= 1024 && Platform.OS === 'web';
   const pathname = usePathname();
+  const [alertConfig, setAlertConfig] = useState<{
+    visible: boolean;
+    message: string;
+    title: string;
+    type: AlertType;
+  }>({
+    visible: false,
+    message: '',
+    title: 'ALERT',
+    type: 'info',
+  });
 
   useEffect(() => {
     setMounted(true);
     SplashScreen.hideAsync().catch(() => {});
+
+    const unsubscribe = registerAlertListener(({ message, title, type }) => {
+      setAlertConfig({
+        visible: true,
+        message,
+        title: title || 'ALERT',
+        type: type || 'info',
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   if (!mounted) return null;
@@ -124,6 +149,41 @@ export default function RootLayout() {
     </View>
   );
 
+  const renderAlertModal = () => {
+    if (!alertConfig.visible) return null;
+
+    let IconComponent = Info;
+    let iconColor = T.text;
+    if (alertConfig.type === 'error') {
+      IconComponent = AlertCircle;
+      iconColor = T.brand;
+    } else if (alertConfig.type === 'success') {
+      IconComponent = CheckCircle;
+      iconColor = T.success;
+    }
+
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={[styles.modalIconContainer, { backgroundColor: iconColor + '15' }]}>
+            <IconComponent size={24} color={iconColor} />
+          </View>
+          <Text style={styles.modalTitle}>{alertConfig.title.toUpperCase()}</Text>
+          <Text style={styles.modalMessage}>{alertConfig.message}</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.modalBtn,
+              pressed && styles.pressed,
+            ]}
+            onPress={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+          >
+            <Text style={styles.modalBtnText}>DISMISS</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   if (isDesktop) {
     return (
       <ThemeProvider value={DefaultTheme}>
@@ -133,6 +193,7 @@ export default function RootLayout() {
             <Slot />
           </View>
           {renderRightSidebar()}
+          {renderAlertModal()}
         </View>
       </ThemeProvider>
     );
@@ -195,6 +256,7 @@ export default function RootLayout() {
             </View>
           </View>
         )}
+        {renderAlertModal()}
       </View>
     </ThemeProvider>
   );
@@ -373,7 +435,8 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   mobileMenuBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   mobileMenuSidebar: {
@@ -386,5 +449,71 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 5,
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(14, 14, 16, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: Spacing.six,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+    borderRadius: 16,
+    padding: Spacing.six,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  modalIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: 'Outfit',
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#1A1A1A',
+    marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  modalMessage: {
+    fontFamily: 'Inter',
+    fontSize: 14,
+    color: '#8A8A8A',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  modalBtn: {
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalBtnText: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 1,
   },
 });

@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
+import { showAlert } from '@/lib/alert';
 
 const T = {
   brand: '#FF3B5C',
@@ -79,40 +80,40 @@ export default function ProfileScreen() {
 
   const handleUpdateAlias = async () => {
     if (!editingAlias.trim()) {
-      alert('Alias cannot be empty.');
+      showAlert('Alias cannot be empty.', 'Invalid Alias', 'error');
       return;
     }
     if (editingAlias.length < 3) {
-      alert('Alias must be at least 3 characters.');
+      showAlert('Alias must be at least 3 characters.', 'Invalid Alias', 'error');
       return;
     }
     try {
       const { error } = await supabase.from('users').update({ alias: editingAlias.trim() }).eq('id', me.id);
       if (error) {
-        alert(error.message || 'Failed to update alias.');
+        showAlert(error.message || 'Failed to update alias.', 'Alias Update Failed', 'error');
       } else {
-        alert('Alias updated successfully!');
+        showAlert('Alias updated successfully!', 'Alias Updated', 'success');
         loadData();
       }
     } catch (e: any) {
-      alert(e.message || 'Error updating alias.');
+      showAlert(e.message || 'Error updating alias.', 'Alias Update Error', 'error');
     }
   };
 
   const handleResetDatabase = () => {
-    alert('Mock database controls disabled in live mode. Wipe data in Supabase directly.');
+    showAlert('Mock database controls disabled in live mode. Wipe data in Supabase directly.', 'Operation Disabled', 'info');
   };
 
   const handleFastForward = (minutes: number) => {
-    alert('Fast-forward simulator disabled in live mode.');
+    showAlert('Fast-forward simulator disabled in live mode.', 'Operation Disabled', 'info');
   };
 
   const handleAdminAuth = () => {
     if (adminPass === 'SPILL_ADMIN') {
       setIsAdminAuthorized(true);
-      alert('Access Granted. Operator break-glass tools unlocked.');
+      showAlert('Access Granted. Operator break-glass tools unlocked.', 'Access Unlocked', 'success');
     } else {
-      alert('Access Denied. Invalid security clearance key.');
+      showAlert('Access Denied. Invalid security clearance key.', 'Access Denied', 'error');
     }
   };
 
@@ -120,30 +121,30 @@ export default function ProfileScreen() {
   const handleApprovePost = async (postId: string) => {
     await supabase.from('posts').update({ reported_count: 0 }).eq('id', postId);
     loadData();
-    alert('Post approved and verified.');
+    showAlert('Post approved and verified.', 'Post Approved', 'success');
   };
   const handleHardDeletePost = async (postId: string) => {
     await supabase.from('posts').delete().eq('id', postId);
     loadData();
-    alert('Post permanently deleted. Redis TTL lease terminated.');
+    showAlert('Post permanently deleted. Redis TTL lease terminated.', 'Post Deleted', 'success');
   };
 
   const handleBanUser = (email: string) => {
     if (email === me?.real_identity) {
-      alert('You cannot ban yourself!');
+      showAlert('You cannot ban yourself!', 'Operation Blocked', 'error');
       return;
     }
     const bans = [...bannedEmails, email];
     setBannedEmails(bans);
     localStorage.setItem('spill_banned_emails', JSON.stringify(bans));
-    alert(`User banned: ${email}`);
+    showAlert(`User banned: ${email}`, 'User Banned', 'success');
   };
 
   const handleUnbanUser = (email: string) => {
     const bans = bannedEmails.filter(e => e !== email);
     setBannedEmails(bans);
     localStorage.setItem('spill_banned_emails', JSON.stringify(bans));
-    alert(`User unbanned: ${email}`);
+    showAlert(`User unbanned: ${email}`, 'User Unbanned', 'success');
   };
 
   return (
