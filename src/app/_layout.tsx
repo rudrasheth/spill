@@ -123,29 +123,22 @@ export default function RootLayout() {
 
   const checkOnboarding = async () => {
     try {
-      const isVerified = await getSecureItem('spill_password_verified');
-      if (isVerified === 'true') {
-        setIsPasswordVerified(true);
-        const profile = await getCurrentUserProfile();
-        if (profile) {
-          setUserProfile(profile);
-          const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
-          
-          if (hasDefaultAlias || !profile.avatar) {
-            setNeedProfileSetup(true);
-            setNeedQuiz(profile.role == null);
-          } else if (profile.role == null) {
-            setNeedProfileSetup(false);
-            setNeedQuiz(true);
-          } else {
-            setNeedProfileSetup(false);
-            setNeedQuiz(false);
-          }
+      setIsPasswordVerified(true);
+      const profile = await getCurrentUserProfile();
+      if (profile) {
+        setUserProfile(profile);
+        const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
+        
+        if (hasDefaultAlias || !profile.avatar) {
+          setNeedProfileSetup(true);
+          setNeedQuiz(profile.role == null);
+        } else if (profile.role == null) {
+          setNeedProfileSetup(false);
+          setNeedQuiz(true);
         } else {
-          setIsPasswordVerified(false);
+          setNeedProfileSetup(false);
+          setNeedQuiz(false);
         }
-      } else {
-        setIsPasswordVerified(false);
       }
     } catch (e) {
       console.error("[Onboarding] check error:", e);
@@ -504,10 +497,6 @@ export default function RootLayout() {
         <Text style={styles.loadingText}>AUTHORIZING NETWORK ACCESS...</Text>
       </View>
     );
-  }
-
-  if (!isPasswordVerified) {
-    return renderPasswordLogin();
   }
 
   if (needProfileSetup) {
