@@ -60,7 +60,7 @@ export default function RootLayout() {
   const [isVerifyingPass, setIsVerifyingPass] = useState(false);
 
   const [needAuth, setNeedAuth] = useState(false);
-  const [authEmail, setAuthEmail] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -288,19 +288,25 @@ export default function RootLayout() {
   };
 
   const handleAuth = async () => {
-    if (!authEmail || !authPassword) {
+    if (!authUsername || !authPassword) {
       setAlertConfig({ visible: true, title: "Error", message: "Please fill in all fields.", type: "error" });
       return;
     }
+    
+    // Supabase requires an email, so we silently format their User ID as a fake email
+    // This allows them to stay 100% anonymous without providing a real email address!
+    const formattedUsername = authUsername.trim().replace(/\s+/g, '').toLowerCase();
+    const ghostEmail = `${formattedUsername}@spill.agent`;
+
     setIsAuthenticating(true);
     try {
       if (isLoginMode) {
-        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        const { error } = await supabase.auth.signInWithPassword({ email: ghostEmail, password: authPassword });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        const { error } = await supabase.auth.signUp({ email: ghostEmail, password: authPassword });
         if (error) throw error;
-        setAlertConfig({ visible: true, title: "Success", message: "Account created! Please check your email to confirm (or continue if auto-confirm is enabled).", type: "success" });
+        setAlertConfig({ visible: true, title: "Success", message: "Agent profile created! Access granted.", type: "success" });
       }
     } catch (error: any) {
       setAlertConfig({ visible: true, title: "Authentication Failed", message: error.message, type: "error" });
@@ -320,15 +326,15 @@ export default function RootLayout() {
           {isLoginMode ? 'Enter your credentials to access the intelligence network.' : 'Sign up to gain access to classified gossip.'}
         </Text>
 
-        <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+        <Text style={styles.inputLabel}>AGENT USER ID</Text>
         <TextInput
           style={styles.onboardingInput}
-          placeholder="agent@example.com"
+          placeholder="e.g. GossipKing99"
           placeholderTextColor="#8A8A8A"
           autoCapitalize="none"
-          keyboardType="email-address"
-          value={authEmail}
-          onChangeText={setAuthEmail}
+          autoCorrect={false}
+          value={authUsername}
+          onChangeText={setAuthUsername}
         />
 
         <Text style={styles.inputLabel}>PASSWORD</Text>
