@@ -272,22 +272,22 @@ create policy "Authenticated users can update moderation flags"
 -- SUPABASE STORAGE BUCKET: spill-images
 -- =====================================================================
 -- Run these separately in the Supabase SQL Editor (Storage schema):
---
---   insert into storage.buckets (id, name, public)
---   values ('spill-images', 'spill-images', true)
---   on conflict (id) do nothing;
---
---   create policy "Public read access to spill-images"
---     on storage.objects for select
---     using ( bucket_id = 'spill-images' );
---
---   create policy "Authenticated users can upload images"
---     on storage.objects for insert
---     with check ( bucket_id = 'spill-images' AND auth.uid() is not null );
---
---   create policy "Authors can delete their own images"
---     on storage.objects for delete
---     using ( bucket_id = 'spill-images' AND auth.uid()::text = (storage.foldername(name))[1] );
+
+insert into storage.buckets (id, name, public)
+values ('spill-images', 'spill-images', true)
+on conflict (id) do nothing;
+
+create policy "Public read access to spill-images"
+  on storage.objects for select
+  using ( bucket_id = 'spill-images' );
+
+create policy "Authenticated users can upload images"
+  on storage.objects for insert
+  with check ( bucket_id = 'spill-images' AND auth.uid() is not null );
+
+create policy "Authors can delete their own images"
+  on storage.objects for delete
+  using ( bucket_id = 'spill-images' AND auth.uid()::text = (storage.foldername(name))[1] );
 
 -- =====================================================================
 -- ATOMIC UNLOCK POST TRANSACTION (RPC)
