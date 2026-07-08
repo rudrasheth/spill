@@ -11,10 +11,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Send, Users, ShieldAlert, Hash, ChevronLeft } from 'lucide-react-native';
+import { Send, Users, ShieldAlert, Hash, ChevronLeft, Lock } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
+import { showAlert } from '@/lib/alert';
 
 const T = {
   brand: '#FF3B5C',
@@ -34,33 +35,57 @@ interface ChatMessage {
   isMe: boolean;
 }
 
-const DEFAULT_CHANNELS = [
-  { id: 'general-spill', name: 'general-spill', desc: 'Main gossip channel for the group.' },
-  { id: 'crypto-rumors', name: 'crypto-rumors', desc: 'Leaks and rumors from the web3 space.' },
-  { id: 'vc-funding-drama', name: 'vc-funding-drama', desc: 'Downrounds, valuation cuts, pitch decks.' },
-];
-
 export default function ChaosRoomsScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [activeChannel, setActiveChannel] = useState<string | null>(null);
-  const [myGroups, setMyGroups] = useState(DEFAULT_CHANNELS);
-  const [joinCode, setJoinCode] = useState('');
   
+  const [publicGroups, setPublicGroups] = useState<any[]>([]);
+  const [joinedGroupIds, setJoinedGroupIds] = useState<string[]>([]);
+  const [myPrivateGroups, setMyPrivateGroups] = useState<any[]>([]);
+  
+  const [joinCode, setJoinCode] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [activeUsers, setActiveUsers] = useState(12);
+  const [loading, setLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  const loadGroupsData = async (userProfile: any) => {
+    if (!userProfile) return;
+    try {
+      const { data: memberships } = await supabase
+        .from('group_members')
+        .select('group_id')
+        .eq('user_id', userProfile.id);
+      
+      const memberIds = (memberships || []).map((m: any) => m.group_id);
+      setJoinedGroupIds(memberIds);
+
+      const { data: allDbGroups } = await supabase.from('groups').select('*');
+      if (allDbGroups) {
+        const publics = allDbGroups.filter((g: any) => !g.is_private);
+        setPublicGroups(publics);
+
+        const privates = allDbGroups.filter((g: any) => g.is_private && memberIds.includes(g.id));
+        setMyPrivateGroups(privates);
+      }
+    } catch (err) {
+      console.error("Error loading groups:", err);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
       const me = await getCurrentUserProfile();
-      if (me) setCurrentUser(me);
+      if (me) {
+        setCurrentUser(me);
+        await loadGroupsData(me);
+      }
     };
     init();
   }, []);
 
   const loadMessages = async (channelId: string) => {
-    // Only fetch messages from the last 15 minutes to simulate ephemeral UI
     const fifteenMinsAgo = new Date(Date.now() - 15 * 60000).toISOString();
     
     const { data } = await supabase
@@ -89,12 +114,10 @@ export default function ChaosRoomsScreen() {
     loadMessages(activeChannel);
     setActiveUsers(Math.floor(Math.random() * 8) + 5);
 
-    // Subscribe to new messages
     const subscription = supabase
       .channel(`room:${activeChannel}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages', filter: `group_id=eq.${activeChannel}` }, async (payload) => {
         const newMsg = payload.new;
-        // Fetch sender alias since it's not in the payload
         const { data: user } = await supabase.from('users').select('alias').eq('id', newMsg.sender_id).single();
         
         const formatted: ChatMessage = {
@@ -106,7 +129,6 @@ export default function ChaosRoomsScreen() {
         };
         
         setMessages(prev => {
-          // Avoid duplicates if we just sent it
           if (prev.find(m => m.id === formatted.id)) return prev;
           return [...prev, formatted];
         });
@@ -124,7 +146,6 @@ export default function ChaosRoomsScreen() {
     const textToSend = inputText.trim();
     setInputText('');
 
-    // Optimistic UI update
     const optimisticId = `temp-${Date.now()}`;
     const optimisticMsg: ChatMessage = {
       id: optimisticId,
@@ -144,23 +165,71 @@ export default function ChaosRoomsScreen() {
 
     if (error) {
       console.error("Failed to send:", error);
-      // Remove optimistic message if failed
       setMessages(prev => prev.filter(m => m.id !== optimisticId));
     }
   };
 
-  const handleJoinGroup = () => {
-    if (!joinCode.trim()) return;
-    const cleanId = joinCode.toLowerCase().replace(/\s+/g, '-');
-    if (!myGroups.find(g => g.id === cleanId)) {
-      setMyGroups(prev => [{
-        id: cleanId,
-        name: cleanId,
-        desc: 'Private encrypted group chat.'
-      }, ...prev]);
+  const handleJoinPublicGroup = async (groupId: string) => {
+    if (!currentUser) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('group_members').insert([{
+        group_id: groupId,
+        user_id: currentUser.id
+      }]);
+      
+      if (error && error.code !== '23505') {
+        console.error("Error joining group:", error);
+        showAlert("Failed to join public group.", "Error", "error");
+        return;
+      }
+      
+      await loadGroupsData(currentUser);
+      setActiveChannel(groupId);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    setActiveChannel(cleanId);
-    setJoinCode('');
+  };
+
+  const handleJoinPrivateGroup = async () => {
+    if (!joinCode.trim() || !currentUser) return;
+    setLoading(true);
+    try {
+      const { data: matchedGroups, error: groupErr } = await supabase
+        .from('groups')
+        .select('*')
+        .eq('invite_code', joinCode.trim())
+        .eq('is_private', true);
+
+      if (groupErr || !matchedGroups || matchedGroups.length === 0) {
+        showAlert("Invalid private invite code.", "Access Denied", "error");
+        return;
+      }
+
+      const targetGroup = matchedGroups[0];
+
+      const { error: joinErr } = await supabase.from('group_members').insert([{
+        group_id: targetGroup.id,
+        user_id: currentUser.id
+      }]);
+
+      if (joinErr && joinErr.code !== '23505') {
+        console.error("Error joining private group:", joinErr);
+        showAlert("Failed to join private group.", "Error", "error");
+        return;
+      }
+
+      await loadGroupsData(currentUser);
+      setActiveChannel(targetGroup.id);
+      setJoinCode('');
+      showAlert(`Successfully joined private room #${targetGroup.name}!`, "Access Granted", "success");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!activeChannel) {
@@ -172,40 +241,78 @@ export default function ChaosRoomsScreen() {
           </View>
         </View>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: Spacing.four }}>
+          
           <View style={styles.joinCard}>
             <Text style={styles.sectionTitle}>JOIN PRIVATE GROUP</Text>
             <View style={styles.joinRow}>
               <TextInput
                 style={styles.joinInput}
-                placeholder="Enter Invite Code..."
+                placeholder="Enter Invite Code (e.g. SECRET123)..."
                 placeholderTextColor={T.muted}
                 value={joinCode}
                 onChangeText={setJoinCode}
+                autoCapitalize="none"
               />
-              <Pressable style={styles.joinBtn} onPress={handleJoinGroup}>
+              <Pressable style={styles.joinBtn} onPress={handleJoinPrivateGroup}>
                 <Text style={styles.joinBtnText}>Join</Text>
               </Pressable>
             </View>
           </View>
 
-          <Text style={[styles.sectionTitle, { marginTop: Spacing.four, marginBottom: Spacing.two }]}>YOUR GROUPS</Text>
-          {myGroups.map(g => (
-            <Pressable key={g.id} style={styles.groupCard} onPress={() => setActiveChannel(g.id)}>
-              <View style={styles.groupIcon}>
-                <Hash size={16} color={T.brand} />
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.two, marginBottom: Spacing.two }]}>PUBLIC CHANNELS</Text>
+          {publicGroups.map(g => {
+            const hasJoined = joinedGroupIds.includes(g.id);
+            return (
+              <View key={g.id} style={styles.groupCard}>
+                <View style={styles.groupIcon}>
+                  <Hash size={16} color={T.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupCardName}>#{g.name}</Text>
+                  <Text style={styles.groupCardDesc}>{g.description}</Text>
+                </View>
+                {hasJoined ? (
+                  <Pressable 
+                    style={styles.enterBtn} 
+                    onPress={() => setActiveChannel(g.id)}
+                  >
+                    <Text style={styles.enterBtnText}>Open</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable 
+                    style={styles.joinChannelBtn} 
+                    onPress={() => handleJoinPublicGroup(g.id)}
+                  >
+                    <Text style={styles.joinChannelBtnText}>Join</Text>
+                  </Pressable>
+                )}
               </View>
-              <View style={{flex: 1}}>
-                <Text style={styles.groupCardName}>#{g.name}</Text>
-                <Text style={styles.groupCardDesc}>{g.desc}</Text>
-              </View>
-            </Pressable>
-          ))}
+            );
+          })}
+
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.four, marginBottom: Spacing.two }]}>YOUR PRIVATE GROUPS</Text>
+          {myPrivateGroups.length === 0 ? (
+            <Text style={styles.noGroupsText}>No private groups joined yet. Enter an invite code above.</Text>
+          ) : (
+            myPrivateGroups.map(g => (
+              <Pressable key={g.id} style={styles.groupCard} onPress={() => setActiveChannel(g.id)}>
+                <View style={[styles.groupIcon, { backgroundColor: 'rgba(232, 178, 61, 0.1)' }]}>
+                  <Lock size={14} color="#E8B23D" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.groupCardName}>#{g.name}</Text>
+                  <Text style={styles.groupCardDesc}>{g.description || 'Private encrypted group chat.'}</Text>
+                </View>
+              </Pressable>
+            ))
+          )}
         </ScrollView>
       </SafeAreaView>
     );
   }
 
-  const activeChanInfo = myGroups.find(c => c.id === activeChannel) || myGroups[0];
+  const allGroups = [...publicGroups, ...myPrivateGroups];
+  const activeChanInfo = allGroups.find(c => c.id === activeChannel) || { id: 'general-spill', name: 'general-spill', desc: 'Main gossip channel for the group.' };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -526,5 +633,38 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.85,
+  },
+  joinChannelBtn: {
+    backgroundColor: T.brand,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  joinChannelBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  enterBtn: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  enterBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: T.text,
+  },
+  noGroupsText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    color: T.muted,
+    fontStyle: 'italic',
+    padding: Spacing.two,
   },
 });

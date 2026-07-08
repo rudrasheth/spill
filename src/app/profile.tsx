@@ -7,14 +7,21 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Terminal, Shield, User, HardDrive, Clock, Check, Trash2, Key, LogOut, Ban } from 'lucide-react-native';
+import { Terminal, Shield, User, HardDrive, Clock, Check, Trash2, Key, LogOut, Ban, ShieldAlert } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
 import { showAlert } from '@/lib/alert';
+
+const SEED_IMAGES = {
+  classified_dossier: require('@/assets/images/classified_dossier.png'),
+  night_market_gossip: require('@/assets/images/night_market_gossip.png'),
+  confidential_leak: require('@/assets/images/confidential_leak.png'),
+};
 
 const T = {
   brand: '#FF3B5C',
@@ -43,6 +50,8 @@ export default function ProfileScreen() {
   const [allReports, setAllReports] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [bannedEmails, setBannedEmails] = useState<string[]>([]);
+  const [pendingPosts, setPendingPosts] = useState<any[]>([]);
+  const [csamFlagCount, setCsamFlagCount] = useState(0);
 
   const loadData = async () => {
     const profile = await getCurrentUserProfile();
@@ -53,6 +62,7 @@ export default function ProfileScreen() {
       const { data: unlocks } = await supabase.from('unlocks').select('*');
       const { data: reports } = await supabase.from('reports').select('*');
       const { data: users } = await supabase.from('users').select('*');
+      const { data: flags } = await supabase.from('moderation_flags').select('*');
 
       setPostsCount((posts || []).filter(p => p.author_id === profile.id).length);
       setUnlocksCount((unlocks || []).filter(u => u.unlocker_id === profile.id).length);
@@ -60,6 +70,9 @@ export default function ProfileScreen() {
       setAllPosts(posts || []);
       setAllReports(reports || []);
       setAllUsers(users || []);
+      
+      setPendingPosts((posts || []).filter(p => p.moderation_status === 'pending_review'));
+      setCsamFlagCount((flags || []).filter(f => f.category === 'csam_suspected' && !f.reviewed).length);
       
       const bans = localStorage.getItem('spill_banned_emails');
       if (bans) setBannedEmails(JSON.parse(bans));
@@ -119,9 +132,9 @@ export default function ProfileScreen() {
 
   // ADMIN OPERATIONS
   const handleApprovePost = async (postId: string) => {
-    await supabase.from('posts').update({ reported_count: 0 }).eq('id', postId);
+    await supabase.from('posts').update({ moderation_status: 'approved', reported_count: 0 }).eq('id', postId);
     loadData();
-    showAlert('Post approved and verified.', 'Post Approved', 'success');
+    showAlert('Post approved and published to feed.', 'Post Approved', 'success');
   };
   const handleHardDeletePost = async (postId: string) => {
     await supabase.from('posts').delete().eq('id', postId);
@@ -265,6 +278,61 @@ export default function ProfileScreen() {
                 <Text style={styles.lockBtnText}>LOCK</Text>
               </Pressable>
             </View>
+
+            {/* CSAM CRITICAL WARNINGS */}
+            {csamFlagCount > 0 && (
+              <View style={styles.csamWarningCard}>
+                <ShieldAlert size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.csamWarningText}>
+                  ⚠️ CRITICAL INCIDENT: {csamFlagCount} CSAM flag(s) registered on this workspace! Audit your Supabase database immediately.
+                </Text>
+              </View>
+            )}
+
+            {/* AI MODERATION REVIEW QUEUE */}
+            <Text style={styles.listTitle}>AI MODERATION REVIEW QUEUE (PENDING APPROVAL)</Text>
+            {pendingPosts.length === 0 ? (
+              <Text style={styles.emptyLogs}>No posts currently pending AI moderation review.</Text>
+            ) : (
+              <View style={styles.modQueueContainer}>
+                {pendingPosts.map((post) => {
+                  const authorUser = allUsers.find(u => u.id === post.author_id);
+                  const isPredefined = post.image_url in SEED_IMAGES;
+                  const imageSource = isPredefined 
+                    ? SEED_IMAGES[post.image_url as keyof typeof SEED_IMAGES] 
+                    : { uri: post.image_url };
+
+                  return (
+                    <View key={post.id} style={styles.modQueueCard}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Image source={imageSource} style={styles.modThumbnail} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.modAuthor}>By @{authorUser?.alias || 'Unknown'}</Text>
+                          <Text style={styles.modCategory}>Reason: {post.moderation_category || 'Low Confidence'}</Text>
+                          <Text style={styles.modCaption} numberOfLines={2}>"{post.caption}"</Text>
+                        </View>
+                      </View>
+                      <View style={styles.modActions}>
+                        <Pressable 
+                          style={styles.modApproveBtn}
+                          onPress={() => handleApprovePost(post.id)}
+                        >
+                          <Check size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.modActionText}>Approve</Text>
+                        </Pressable>
+                        <Pressable 
+                          style={styles.modRejectBtn}
+                          onPress={() => handleHardDeletePost(post.id)}
+                        >
+                          <Trash2 size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.modActionText}>Reject</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
 
             {/* IDENTITY MAPPING TABLE */}
             <Text style={styles.listTitle}>ALIAS TO REAL IDENTITY MAP (USERS TABLE)</Text>
@@ -854,6 +922,89 @@ const styles = StyleSheet.create({
   actionBtnText: {
     fontFamily: 'Inter',
     fontSize: 10,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  csamWarningCard: {
+    backgroundColor: '#FF3B5C',
+    borderRadius: 8,
+    padding: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.four,
+  },
+  csamWarningText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    flex: 1,
+  },
+  modQueueContainer: {
+    marginBottom: Spacing.four,
+  },
+  modQueueCard: {
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 10,
+    padding: Spacing.three,
+    marginBottom: Spacing.two,
+  },
+  modThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 6,
+    marginRight: 12,
+    backgroundColor: T.surface,
+  },
+  modAuthor: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  modCategory: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    color: '#E8B23D',
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  modCaption: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: T.muted,
+    marginTop: 4,
+  },
+  modActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: T.border,
+    paddingTop: 8,
+  },
+  modApproveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#30D158',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  modRejectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: T.brand,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  modActionText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },

@@ -78,6 +78,39 @@ export default function PostCreationScreen() {
     }
   };
 
+  const applyPIIBlur = async (base64Str: string): Promise<string> => {
+    if (Platform.OS !== 'web') return base64Str;
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          
+          const rectWidth = img.width * 0.4;
+          const rectHeight = img.height * 0.25;
+          const rectX = (img.width - rectWidth) / 2;
+          const rectY = (img.height - rectHeight) / 3;
+          
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+          ctx.fillRect(rectX, rectY, rectWidth, rectHeight);
+          
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = `bold ${Math.max(14, Math.floor(img.width * 0.035))}px monospace`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('[PII REDACTED]', rectX + rectWidth / 2, rectY + rectHeight / 2);
+        }
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(base64Str);
+      img.src = base64Str;
+    });
+  };
+
   const handlePublish = async () => {
     if (!caption.trim()) { 
       showAlert('Gossip text cannot be empty.', 'Empty Gossip', 'error'); 
@@ -93,42 +126,131 @@ export default function PostCreationScreen() {
     setIsScanning(true);
     setSafetyCheckPassed(true);
 
-    // Simple security scan flow
-    setScanStep('VALIDATING AUTHENTICATED WORKSPACE...');
-    await new Promise(r => setTimeout(r, 800));
-    setScanStep('VERIFYING GROUP SECURITY POLICIES...');
-    await new Promise(r => setTimeout(r, 700));
-    setScanStep('INSPECTING UPLOADED PROOF METADATA...');
-    await new Promise(r => setTimeout(r, 600));
+    try {
+      let finalImageUrl: string = selectedMediaKey;
+      let moderationStatus = 'approved';
+      let moderationCategory = null;
 
-    // Calculate expiry timestamp
-    let expiresAt: string | null = null;
-    const now = Date.now();
-    if (expiryOption === '6h') {
-      expiresAt = new Date(now + 6 * 3600 * 1000).toISOString();
-    } else if (expiryOption === '24h') {
-      expiresAt = new Date(now + 24 * 3600 * 1000).toISOString();
-    } else if (expiryOption === '48h') {
-      expiresAt = new Date(now + 48 * 3600 * 1000).toISOString();
+      if (customImageUri) {
+        setScanStep('CONTACTING IMAGE MODERATION AGENT...');
+        await new Promise(r => setTimeout(r, 600));
+        
+        setScanStep('RUNNING GEMINI VISION SCAN...');
+        
+        const mimeType = customImageUri.split(';')[0]?.split(':')[1] || 'image/png';
+        
+        const { data: modResult, error: modErr } = await supabase.functions.invoke('moderate-image', {
+          body: {
+            imageBase64: customImageUri,
+            mimeType
+          }
+        });
+
+        if (modErr || !modResult) {
+          console.error("Moderation invocation failed:", modErr);
+          setScanStep('MODERATION AGENT OFFLINE. BYPASSING SAFETY...');
+          await new Promise(r => setTimeout(r, 800));
+        } else {
+          const { safe, category, confidence, action } = modResult;
+          console.log("Moderation verdict:", modResult);
+          
+          moderationCategory = category;
+
+          if (action === 'reject' || action === 'silent_reject') {
+            setIsScanning(false);
+            showAlert("This image can't be posted.", "Content Rejected", "error");
+            return;
+          }
+
+          let finalBase64 = customImageUri;
+          if (action === 'blur') {
+            setScanStep('DETECTED PII. REDACTING DATA...');
+            await new Promise(r => setTimeout(r, 800));
+            finalBase64 = await applyPIIBlur(customImageUri);
+          }
+
+          if (action === 'pending_review') {
+            moderationStatus = 'pending_review';
+          }
+
+          setScanStep('UPLOADING TO ENCRYPTED STORAGE...');
+          
+          const cleanBase64 = finalBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+          const byteCharacters = atob(cleanBase64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: mimeType });
+
+          const fileName = `${me.id}/${Date.now()}.png`;
+          const { data: uploadData, error: uploadErr } = await supabase.storage
+            .from('spill-images')
+            .upload(fileName, blob, {
+              contentType: mimeType,
+              upsert: true
+            });
+
+          if (uploadErr) {
+            console.error("Storage upload error:", uploadErr);
+            throw new Error("Failed to upload image to storage.");
+          }
+
+          const { data: urlData } = supabase.storage
+            .from('spill-images')
+            .getPublicUrl(fileName);
+          
+          finalImageUrl = urlData.publicUrl;
+        }
+      }
+
+      setScanStep('VERIFYING GROUP SECURITY POLICIES...');
+      await new Promise(r => setTimeout(r, 500));
+
+      let expiresAt: string | null = null;
+      const now = Date.now();
+      if (expiryOption === '6h') {
+        expiresAt = new Date(now + 6 * 3600 * 1000).toISOString();
+      } else if (expiryOption === '24h') {
+        expiresAt = new Date(now + 24 * 3600 * 1000).toISOString();
+      } else if (expiryOption === '48h') {
+        expiresAt = new Date(now + 48 * 3600 * 1000).toISOString();
+      }
+
+      await supabase.from('posts').insert([{
+        author_id: me.id,
+        image_url: finalImageUrl,
+        caption: caption.trim(),
+        unlock_price: unlockPrice,
+        expires_at: expiresAt,
+        moderation_status: moderationStatus,
+        moderation_category: moderationCategory
+      }]);
+
+      await supabase.from('users').update({ token_balance: me.token_balance + 3 }).eq('id', me.id);
+
+      setScanStep('GOSSIP REGISTERED. METRO LEASE LEASED.');
+      await new Promise(r => setTimeout(r, 600));
+
+      setIsScanning(false);
+
+      if (moderationStatus === 'pending_review') {
+        showAlert(
+          "Your post is pending review by the operator. It will appear on the feed once approved.",
+          "Post in Review",
+          "info"
+        );
+      } else {
+        showAlert("Gossip published successfully!", "Spilled", "success");
+      }
+      
+      router.push('/');
+    } catch (err: any) {
+      console.error(err);
+      setIsScanning(false);
+      showAlert(err.message || "Failed to publish gossip.", "Error", "error");
     }
-
-    // Insert Post using local storage Mock
-    await supabase.from('posts').insert([{
-      author_id: me.id,
-      image_url: customImageUri || selectedMediaKey,
-      caption: caption.trim(),
-      unlock_price: unlockPrice,
-      expires_at: expiresAt,
-    }]);
-
-    // Reward active poster with +3 Receipts
-    await supabase.from('users').update({ token_balance: me.token_balance + 3 }).eq('id', me.id);
-
-    setScanStep('GOSSIP REGISTERED. METRO LEASE LEASED.');
-    await new Promise(r => setTimeout(r, 600));
-
-    setIsScanning(false);
-    router.push('/');
   };
 
   return (
