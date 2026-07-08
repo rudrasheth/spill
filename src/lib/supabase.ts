@@ -42,53 +42,28 @@ export const getCurrentUserProfile = async () => {
     if (sessionErr) {
       console.error("[Supabase] getSession error:", sessionErr);
     }
+    
     if (!sessionData?.session) {
-      const signInRes = await supabase.auth.signInAnonymously();
-      if (signInRes.error) {
-        console.error("[Supabase] signInAnonymously error:", signInRes.error.message, signInRes.error);
-        return null;
-      }
-      const user = signInRes.data?.user;
-      if (user) {
-        const { data: profileCheck, error: profileErr } = await supabase.from('users').select('*').eq('id', user.id).single();
-        if (profileErr) {
-          console.warn("[Supabase] Profile check error (non-fatal, might not exist yet):", profileErr.message);
-        }
-        if (!profileCheck) {
-          const randomId = Math.floor(Math.random() * 900) + 100;
-          const alias = `TeaSpiller_${randomId}`;
-          const { error: insertErr } = await supabase.from('users').insert([{
-            id: user.id,
-            alias,
-            real_identity: 'Anonymous Guest',
-            token_balance: 10
-          }]);
-          if (insertErr) {
-            console.error("[Supabase] Failed to insert profile for new user:", insertErr.message, insertErr);
-          }
-          const { data: newProfile, error: newProfileErr } = await supabase.from('users').select('*').eq('id', user.id).single();
-          if (newProfileErr) {
-            console.error("[Supabase] Failed to retrieve new profile after insert:", newProfileErr.message);
-          }
-          return newProfile;
-        }
-        return profileCheck;
-      }
+      // If there is no session, we return null so the UI can show the Email/Password Auth screen
+      return null;
     } else {
       const { data: profileCheck, error: profileErr } = await supabase.from('users').select('*').eq('id', sessionData.session.user.id).single();
       if (profileCheck) return profileCheck;
 
-      console.warn("[Supabase] Active session exists but profile row is missing or unreadable. Error:", profileErr?.message);
+      console.warn("[Supabase] Active session exists but profile row is missing. Error:", profileErr?.message);
+      
+      // Auto-recreate missing profile if session exists but no profile row
       const randomId = Math.floor(Math.random() * 900) + 100;
       const alias = `TeaSpiller_${randomId}`;
       const { error: insertErr } = await supabase.from('users').insert([{
         id: sessionData.session.user.id,
         alias,
-        real_identity: 'Anonymous Guest',
+        real_identity: sessionData.session.user.email || 'Unknown User',
         token_balance: 10
       }]);
+      
       if (insertErr) {
-        console.error("[Supabase] Failed to auto-recreate missing profile:", insertErr.message, insertErr);
+        console.error("[Supabase] Failed to auto-recreate missing profile:", insertErr.message);
       }
       const { data: newProfile } = await supabase.from('users').select('*').eq('id', sessionData.session.user.id).single();
       return newProfile;

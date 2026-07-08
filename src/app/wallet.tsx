@@ -139,9 +139,9 @@ export default function WalletScreen() {
         <Text style={styles.sectionTitle}>ACQUIRE TOKENS</Text>
         <View style={[styles.packagesContainer, isMobile && { flexDirection: 'column' }]}>
           {[
-            { amount: 10, price: '$1.99', desc: 'LURKER BUNDLE' },
-            { amount: 25, price: '$3.99', desc: 'INVESTIGATOR PACK' },
-            { amount: 60, price: '$7.99', desc: 'GOSSIP MAKER SPEC' },
+            { amount: 10, price: '₹99', desc: 'LURKER BUNDLE' },
+            { amount: 25, price: '₹199', desc: 'INVESTIGATOR PACK' },
+            { amount: 60, price: '₹499', desc: 'GOSSIP MAKER SPEC' },
           ].map((pkg, idx) => (
             <Pressable
               key={idx}

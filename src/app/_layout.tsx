@@ -59,6 +59,12 @@ export default function RootLayout() {
   const [passwordInput, setPasswordInput] = useState('');
   const [isVerifyingPass, setIsVerifyingPass] = useState(false);
 
+  const [needAuth, setNeedAuth] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isLoginMode, setIsLoginMode] = useState(true);
+
   const [aliasInput, setAliasInput] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('🕵️');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -126,6 +132,7 @@ export default function RootLayout() {
       setIsPasswordVerified(true);
       const profile = await getCurrentUserProfile();
       if (profile) {
+        setNeedAuth(false);
         setUserProfile(profile);
         const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
         
@@ -139,6 +146,8 @@ export default function RootLayout() {
           setNeedProfileSetup(false);
           setNeedQuiz(false);
         }
+      } else {
+        setNeedAuth(true);
       }
     } catch (e) {
       console.error("[Onboarding] check error:", e);
@@ -164,11 +173,11 @@ export default function RootLayout() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        setIsPasswordVerified(false);
+        setNeedAuth(true);
         setNeedProfileSetup(false);
         setNeedQuiz(false);
         setUserProfile(null);
-      } else {
+      } else if (event === 'SIGNED_IN') {
         checkOnboarding();
       }
     });
@@ -277,6 +286,85 @@ export default function RootLayout() {
     };
     await submitQuiz(defaultAnswers);
   };
+
+  const handleAuth = async () => {
+    if (!authEmail || !authPassword) {
+      setAlertConfig({ visible: true, title: "Error", message: "Please fill in all fields.", type: "error" });
+      return;
+    }
+    setIsAuthenticating(true);
+    try {
+      if (isLoginMode) {
+        const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+        if (error) throw error;
+        setAlertConfig({ visible: true, title: "Success", message: "Account created! Please check your email to confirm (or continue if auto-confirm is enabled).", type: "success" });
+      }
+    } catch (error: any) {
+      setAlertConfig({ visible: true, title: "Authentication Failed", message: error.message, type: "error" });
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const renderAuthScreen = () => (
+    <View style={styles.onboardingContainer}>
+      <View style={styles.onboardingCard}>
+        <View style={styles.iconCircle}>
+          <User size={24} color="#FF3B5C" />
+        </View>
+        <Text style={styles.onboardingTitle}>{isLoginMode ? 'AGENT LOGIN' : 'RECRUIT ENROLLMENT'}</Text>
+        <Text style={styles.onboardingSubtitle}>
+          {isLoginMode ? 'Enter your credentials to access the intelligence network.' : 'Sign up to gain access to classified gossip.'}
+        </Text>
+
+        <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
+        <TextInput
+          style={styles.onboardingInput}
+          placeholder="agent@example.com"
+          placeholderTextColor="#8A8A8A"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={authEmail}
+          onChangeText={setAuthEmail}
+        />
+
+        <Text style={styles.inputLabel}>PASSWORD</Text>
+        <TextInput
+          style={styles.onboardingInput}
+          placeholder="••••••••"
+          placeholderTextColor="#8A8A8A"
+          secureTextEntry
+          value={authPassword}
+          onChangeText={setAuthPassword}
+        />
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.onboardingBtn,
+            pressed && styles.pressed,
+            isAuthenticating && styles.disabledBtn
+          ]}
+          onPress={handleAuth}
+          disabled={isAuthenticating}
+        >
+          {isAuthenticating ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.onboardingBtnText}>{isLoginMode ? 'ACCESS NETWORK' : 'CREATE ACCOUNT'}</Text>
+          )}
+        </Pressable>
+
+        <Pressable onPress={() => setIsLoginMode(!isLoginMode)} style={{ marginTop: 20, alignItems: 'center' }}>
+          <Text style={{ color: T.muted, fontFamily: 'Inter', fontSize: 13 }}>
+            {isLoginMode ? "Don't have an account? Sign up" : "Already an agent? Log in"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
 
   const renderPasswordLogin = () => (
     <View style={styles.onboardingContainer}>
@@ -497,6 +585,10 @@ export default function RootLayout() {
         <Text style={styles.loadingText}>AUTHORIZING NETWORK ACCESS...</Text>
       </View>
     );
+  }
+
+  if (needAuth) {
+    return renderAuthScreen();
   }
 
   if (needProfileSetup) {
