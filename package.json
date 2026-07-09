@@ -36,6 +36,8 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/react": "~19.2.2",
     "bcryptjs": "^3.0.3",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"
   },
   "scripts": {

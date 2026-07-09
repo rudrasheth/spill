@@ -292,10 +292,31 @@ export default function RootLayout() {
       setAlertConfig({ visible: true, title: "Error", message: "Please fill in all fields.", type: "error" });
       return;
     }
+
+    const trimmedUsername = authUsername.trim();
+    if (trimmedUsername.length < 3) {
+      setAlertConfig({
+        visible: true,
+        title: "Invalid Username",
+        message: "Agent User ID must be at least 3 characters.",
+        type: "error"
+      });
+      return;
+    }
+
+    if (authPassword.length < 6) {
+      setAlertConfig({
+        visible: true,
+        title: "Weak Password",
+        message: "Password must be at least 6 characters long (Supabase requirement).",
+        type: "error"
+      });
+      return;
+    }
     
     // Supabase requires an email, so we silently format their User ID as a fake email
     // This allows them to stay 100% anonymous without providing a real email address!
-    const formattedUsername = authUsername.trim().replace(/\s+/g, '').toLowerCase();
+    const formattedUsername = trimmedUsername.replace(/\s+/g, '').toLowerCase();
     const ghostEmail = `${formattedUsername}@spill.agent`;
 
     setIsAuthenticating(true);
@@ -304,9 +325,19 @@ export default function RootLayout() {
         const { error } = await supabase.auth.signInWithPassword({ email: ghostEmail, password: authPassword });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ email: ghostEmail, password: authPassword });
+        const { data, error } = await supabase.auth.signUp({ email: ghostEmail, password: authPassword });
         if (error) throw error;
-        setAlertConfig({ visible: true, title: "Success", message: "Agent profile created! Access granted.", type: "success" });
+        
+        if (data && data.user && !data.session) {
+          setAlertConfig({
+            visible: true,
+            title: "Email Confirmation Enabled",
+            message: "Account registered successfully, but email verification is turned ON in your Supabase project. Because anonymous alias emails (@spill.agent) cannot receive verification links, you must go to your Supabase Dashboard -> Authentication -> Providers -> Email and turn off 'Confirm email' so agents can onboard instantly.",
+            type: "error"
+          });
+        } else {
+          setAlertConfig({ visible: true, title: "Success", message: "Agent profile created! Access granted.", type: "success" });
+        }
       }
     } catch (error: any) {
       setAlertConfig({ visible: true, title: "Authentication Failed", message: error.message, type: "error" });
@@ -369,6 +400,7 @@ export default function RootLayout() {
           </Text>
         </Pressable>
       </View>
+      {renderAlertModal()}
     </View>
   );
 
@@ -423,6 +455,7 @@ export default function RootLayout() {
           )}
         </Pressable>
       </View>
+      {renderAlertModal()}
     </View>
   );
 
@@ -533,6 +566,7 @@ export default function RootLayout() {
           )}
         </Pressable>
       </View>
+      {renderAlertModal()}
     </View>
   );
 
@@ -578,6 +612,7 @@ export default function RootLayout() {
             <Text style={styles.skipBtnText}>Skip Interview & Use Default Tuning</Text>
           </Pressable>
         </View>
+        {renderAlertModal()}
       </View>
     );
   };
