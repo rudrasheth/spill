@@ -346,6 +346,41 @@ export default function RootLayout() {
     }
   };
 
+  const renderAlertModal = () => {
+    if (!alertConfig.visible) return null;
+
+    let IconComponent = Info;
+    let iconColor = T.text;
+    if (alertConfig.type === 'error') {
+      IconComponent = AlertCircle;
+      iconColor = T.brand;
+    } else if (alertConfig.type === 'success') {
+      IconComponent = CheckCircle;
+      iconColor = T.success;
+    }
+
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={[styles.modalIconContainer, { backgroundColor: iconColor + '15' }]}>
+            <IconComponent size={24} color={iconColor} />
+          </View>
+          <Text style={styles.modalTitle}>{alertConfig.title.toUpperCase()}</Text>
+          <Text style={styles.modalMessage}>{alertConfig.message}</Text>
+          <Pressable
+            style={({ pressed }) => [
+              styles.modalBtn,
+              pressed && styles.pressed,
+            ]}
+            onPress={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
+          >
+            <Text style={styles.modalBtnText}>DISMISS</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
   const renderAuthScreen = () => (
     <View style={styles.onboardingContainer}>
       <View style={styles.onboardingCard}>
@@ -722,40 +757,7 @@ export default function RootLayout() {
     </View>
   );
 
-  const renderAlertModal = () => {
-    if (!alertConfig.visible) return null;
 
-    let IconComponent = Info;
-    let iconColor = T.text;
-    if (alertConfig.type === 'error') {
-      IconComponent = AlertCircle;
-      iconColor = T.brand;
-    } else if (alertConfig.type === 'success') {
-      IconComponent = CheckCircle;
-      iconColor = T.success;
-    }
-
-    return (
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <View style={[styles.modalIconContainer, { backgroundColor: iconColor + '15' }]}>
-            <IconComponent size={24} color={iconColor} />
-          </View>
-          <Text style={styles.modalTitle}>{alertConfig.title.toUpperCase()}</Text>
-          <Text style={styles.modalMessage}>{alertConfig.message}</Text>
-          <Pressable
-            style={({ pressed }) => [
-              styles.modalBtn,
-              pressed && styles.pressed,
-            ]}
-            onPress={() => setAlertConfig(prev => ({ ...prev, visible: false }))}
-          >
-            <Text style={styles.modalBtnText}>DISMISS</Text>
-          </Pressable>
-        </View>
-      </View>
-    );
-  };
 
   if (isDesktop) {
     return (
