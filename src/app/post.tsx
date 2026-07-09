@@ -148,6 +148,7 @@ export default function PostCreationScreen() {
           }
         });
 
+        let finalBase64 = customImageUri;
         if (modErr || !modResult) {
           console.error("Moderation invocation failed:", modErr);
           setScanStep('MODERATION AGENT OFFLINE. BYPASSING SAFETY...');
@@ -164,7 +165,6 @@ export default function PostCreationScreen() {
             return;
           }
 
-          let finalBase64 = customImageUri;
           if (action === 'blur') {
             setScanStep('DETECTED PII. REDACTING DATA...');
             await new Promise(r => setTimeout(r, 800));
@@ -174,37 +174,37 @@ export default function PostCreationScreen() {
           if (action === 'pending_review') {
             moderationStatus = 'pending_review';
           }
-
-          setScanStep('UPLOADING TO ENCRYPTED STORAGE...');
-          
-          const cleanBase64 = finalBase64.replace(/^data:image\/[a-z]+;base64,/, "");
-          const byteCharacters = atob(cleanBase64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: mimeType });
-
-          const fileName = `${me.id}/${Date.now()}.png`;
-          const { data: uploadData, error: uploadErr } = await supabase.storage
-            .from('spill-images')
-            .upload(fileName, blob, {
-              contentType: mimeType,
-              upsert: true
-            });
-
-          if (uploadErr) {
-            console.error("Storage upload error:", uploadErr);
-            throw new Error("Failed to upload image to storage.");
-          }
-
-          const { data: urlData } = supabase.storage
-            .from('spill-images')
-            .getPublicUrl(fileName);
-          
-          finalImageUrl = urlData.publicUrl;
         }
+
+        setScanStep('UPLOADING TO ENCRYPTED STORAGE...');
+        
+        const cleanBase64 = finalBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+        const byteCharacters = atob(cleanBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+
+        const fileName = `${me.id}/${Date.now()}.png`;
+        const { data: uploadData, error: uploadErr } = await supabase.storage
+          .from('spill-images')
+          .upload(fileName, blob, {
+            contentType: mimeType,
+            upsert: true
+          });
+
+        if (uploadErr) {
+          console.error("Storage upload error:", uploadErr);
+          throw new Error("Failed to upload image to storage.");
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('spill-images')
+          .getPublicUrl(fileName);
+        
+        finalImageUrl = urlData.publicUrl;
       }
 
       setScanStep('VERIFYING GROUP SECURITY POLICIES...');
