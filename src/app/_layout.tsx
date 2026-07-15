@@ -37,10 +37,10 @@ export const T = {
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const [mounted, setMounted] = useState(false);
-  const [fontsLoaded] = useFonts({
-    'Outfit': 'https://fonts.gstatic.com/s/outfit/v11/F3u81gq05yJH5mX3NSA.woff2',
-    'Inter': 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZJhjp-Ek-_eeAmJ.woff2',
-    'IBM Plex Mono': 'https://fonts.gstatic.com/s/ibmplexmono/v19/-F6qFJt24tiMecnWW-1NiFUXdPDtbGO1217S2sT4.woff2',
+  const [fontsLoaded] = useFonts(Platform.OS === 'web' ? {} : {
+    'Outfit': 'https://raw.githubusercontent.com/google/fonts/main/ofl/outfit/Outfit%5Bwght%5D.ttf',
+    'Inter': 'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bslnt%2Cwght%5D.ttf',
+    'IBM Plex Mono': 'https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf',
   });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isDesktop = width >= 1024 && Platform.OS === 'web';
@@ -172,6 +172,17 @@ export default function RootLayout() {
   useEffect(() => {
     setMounted(true);
     checkOnboarding();
+
+    if (Platform.OS === 'web') {
+      const id = 'google-fonts-stylesheet';
+      if (!document.getElementById(id)) {
+        const link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        link.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&family=Inter:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;700&display=swap';
+        document.head.appendChild(link);
+      }
+    }
 
     const unsubscribe = registerAlertListener(({ message, title, type }) => {
       setAlertConfig({
