@@ -13,7 +13,7 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
-import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X, AlertCircle, CheckCircle, Info, Lock, Key, User, Sparkles, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { Flame, Zap, Plus, Ticket, Terminal, Command, Menu, X, AlertCircle, CheckCircle, Info, Lock, Key, User, Sparkles, ChevronRight, ChevronLeft, Target, Award } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
@@ -21,6 +21,8 @@ import { registerAlertListener, AlertType } from '@/lib/alert';
 import { getSecureItem, setSecureItem } from '@/lib/secure-store';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+import { useFonts } from 'expo-font';
 
 export const T = {
   brand: '#FF3B5C',
@@ -35,6 +37,11 @@ export const T = {
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const [mounted, setMounted] = useState(false);
+  const [fontsLoaded] = useFonts({
+    'Outfit': 'https://fonts.gstatic.com/s/outfit/v11/F3u81gq05yJH5mX3NSA.woff2',
+    'Inter': 'https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZJhjp-Ek-_eeAmJ.woff2',
+    'IBM Plex Mono': 'https://fonts.gstatic.com/s/ibmplexmono/v19/-F6qFJt24tiMecnWW-1NiFUXdPDtbGO1217S2sT4.woff2',
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isDesktop = width >= 1024 && Platform.OS === 'web';
   const pathname = usePathname();
@@ -129,25 +136,31 @@ export default function RootLayout() {
 
   const checkOnboarding = async () => {
     try {
-      setIsPasswordVerified(true);
-      const profile = await getCurrentUserProfile();
-      if (profile) {
-        setNeedAuth(false);
-        setUserProfile(profile);
-        const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
-        
-        if (hasDefaultAlias || !profile.avatar) {
-          setNeedProfileSetup(true);
-          setNeedQuiz(profile.role == null);
-        } else if (profile.role == null) {
-          setNeedProfileSetup(false);
-          setNeedQuiz(true);
+      const verified = await getSecureItem('spill_password_verified');
+      if (verified === 'true') {
+        setIsPasswordVerified(true);
+        const profile = await getCurrentUserProfile();
+        if (profile) {
+          setNeedAuth(false);
+          setUserProfile(profile);
+          const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
+          
+          if (hasDefaultAlias || !profile.avatar) {
+            setNeedProfileSetup(true);
+            setNeedQuiz(profile.role == null);
+          } else if (profile.role == null) {
+            setNeedProfileSetup(false);
+            setNeedQuiz(true);
+          } else {
+            setNeedProfileSetup(false);
+            setNeedQuiz(false);
+          }
         } else {
-          setNeedProfileSetup(false);
-          setNeedQuiz(false);
+          setNeedAuth(true);
         }
       } else {
-        setNeedAuth(true);
+        setIsPasswordVerified(false);
+        setNeedAuth(false);
       }
     } catch (e) {
       console.error("[Onboarding] check error:", e);
@@ -158,8 +171,6 @@ export default function RootLayout() {
 
   useEffect(() => {
     setMounted(true);
-    SplashScreen.hideAsync().catch(() => {});
-
     checkOnboarding();
 
     const unsubscribe = registerAlertListener(({ message, title, type }) => {
@@ -204,6 +215,8 @@ export default function RootLayout() {
       }
       if (data.success) {
         await setSecureItem('spill_password_verified', 'true');
+        await setSecureItem('spill_shared_passcode', pass);
+        setIsPasswordVerified(true);
         await checkOnboarding();
       } else {
         setAlertConfig({
@@ -288,57 +301,64 @@ export default function RootLayout() {
   };
 
   const handleAuth = async () => {
-    if (!authUsername || !authPassword) {
-      setAlertConfig({ visible: true, title: "Error", message: "Please fill in all fields.", type: "error" });
+    if (!aliasInput || !aliasInput.trim()) {
+      setAlertConfig({ visible: true, title: "Error", message: "Please enter your agent alias.", type: "error" });
       return;
     }
 
-    const trimmedUsername = authUsername.trim();
-    if (trimmedUsername.length < 3) {
+    const trimmedAlias = aliasInput.trim();
+    if (trimmedAlias.length < 3) {
       setAlertConfig({
         visible: true,
-        title: "Invalid Username",
-        message: "Agent User ID must be at least 3 characters.",
+        title: "Invalid Alias",
+        message: "Agent alias must be at least 3 characters.",
         type: "error"
       });
       return;
     }
-
-    if (authPassword.length < 6) {
-      setAlertConfig({
-        visible: true,
-        title: "Weak Password",
-        message: "Password must be at least 6 characters long (Supabase requirement).",
-        type: "error"
-      });
-      return;
-    }
-    
-    // Supabase requires an email, so we silently format their User ID as a fake email
-    // This allows them to stay 100% anonymous without providing a real email address!
-    const formattedUsername = trimmedUsername.replace(/\s+/g, '').toLowerCase();
-    const ghostEmail = `${formattedUsername}@spill.agent`;
 
     setIsAuthenticating(true);
     try {
-      if (isLoginMode) {
-        const { error } = await supabase.auth.signInWithPassword({ email: ghostEmail, password: authPassword });
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.auth.signUp({ email: ghostEmail, password: authPassword });
-        if (error) throw error;
-        
-        if (data && data.user && !data.session) {
-          setAlertConfig({
-            visible: true,
-            title: "Email Confirmation Enabled",
-            message: "Account registered successfully, but email verification is turned ON in your Supabase project. Because anonymous alias emails (@spill.agent) cannot receive verification links, you must go to your Supabase Dashboard -> Authentication -> Providers -> Email and turn off 'Confirm email' so agents can onboard instantly.",
-            type: "error"
+      const passcode = await getSecureItem('spill_shared_passcode') || "securecode";
+      const ghostEmail = `${trimmedAlias.replace(/\s+/g, '').toLowerCase()}@spill.agent`;
+
+      // 1. Try to sign in
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: ghostEmail,
+        password: passcode
+      });
+
+      if (signInErr) {
+        if (signInErr.message.includes('Invalid login credentials') || signInErr.message.includes('Email not confirmed')) {
+          const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+            email: ghostEmail,
+            password: passcode
           });
+
+          if (signUpErr) throw signUpErr;
+
+          if (signUpData?.user) {
+            const { error: profileErr } = await supabase.from('users').upsert({
+              id: signUpData.user.id,
+              alias: trimmedAlias,
+              avatar: selectedAvatar,
+              real_identity: ghostEmail,
+              token_balance: 10
+            });
+            if (profileErr) console.error("Failed to insert user profile:", profileErr.message);
+          }
         } else {
-          setAlertConfig({ visible: true, title: "Success", message: "Agent profile created! Access granted.", type: "success" });
+          throw signInErr;
         }
+      } else if (signInData?.user) {
+        const { error: updateErr } = await supabase.from('users').update({
+          alias: trimmedAlias,
+          avatar: selectedAvatar
+        }).eq('id', signInData.user.id);
+        if (updateErr) console.error("Failed to update user profile on login:", updateErr.message);
       }
+
+      await checkOnboarding();
     } catch (error: any) {
       setAlertConfig({ visible: true, title: "Authentication Failed", message: error.message, type: "error" });
     } finally {
@@ -387,31 +407,38 @@ export default function RootLayout() {
         <View style={styles.iconCircle}>
           <User size={24} color="#FF3B5C" />
         </View>
-        <Text style={styles.onboardingTitle}>{isLoginMode ? 'AGENT LOGIN' : 'RECRUIT ENROLLMENT'}</Text>
+        <Text style={styles.onboardingTitle}>ESTABLISH SECURE IDENTITY</Text>
         <Text style={styles.onboardingSubtitle}>
-          {isLoginMode ? 'Enter your credentials to access the intelligence network.' : 'Sign up to gain access to classified gossip.'}
+          Choose your Agent Alias and an avatar visual key to identify your posts. If your alias already exists, we will log you in.
         </Text>
 
-        <Text style={styles.inputLabel}>AGENT USER ID</Text>
+        <Text style={styles.inputLabel}>AGENT ALIAS</Text>
         <TextInput
           style={styles.onboardingInput}
           placeholder="e.g. GossipKing99"
           placeholderTextColor="#8A8A8A"
           autoCapitalize="none"
           autoCorrect={false}
-          value={authUsername}
-          onChangeText={setAuthUsername}
+          value={aliasInput}
+          onChangeText={setAliasInput}
+          id="input-login-alias"
         />
 
-        <Text style={styles.inputLabel}>PASSWORD</Text>
-        <TextInput
-          style={styles.onboardingInput}
-          placeholder="••••••••"
-          placeholderTextColor="#8A8A8A"
-          secureTextEntry
-          value={authPassword}
-          onChangeText={setAuthPassword}
-        />
+        <Text style={styles.inputLabel}>CHOOSE AVATAR VISUAL KEY</Text>
+        <View style={styles.avatarGrid}>
+          {AVATARS.map((emoji) => (
+            <Pressable
+              key={emoji}
+              style={[
+                styles.avatarItem,
+                selectedAvatar === emoji && styles.avatarItemSelected
+              ]}
+              onPress={() => setSelectedAvatar(emoji)}
+            >
+              <Text style={styles.avatarEmoji}>{emoji}</Text>
+            </Pressable>
+          ))}
+        </View>
 
         <Pressable
           style={({ pressed }) => [
@@ -421,18 +448,13 @@ export default function RootLayout() {
           ]}
           onPress={handleAuth}
           disabled={isAuthenticating}
+          id="btn-login-establish"
         >
           {isAuthenticating ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={styles.onboardingBtnText}>{isLoginMode ? 'ACCESS NETWORK' : 'CREATE ACCOUNT'}</Text>
+            <Text style={styles.onboardingBtnText}>ACCESS INTEL FEED</Text>
           )}
-        </Pressable>
-
-        <Pressable onPress={() => setIsLoginMode(!isLoginMode)} style={{ marginTop: 20, alignItems: 'center' }}>
-          <Text style={{ color: T.muted, fontFamily: 'Inter', fontSize: 13 }}>
-            {isLoginMode ? "Don't have an account? Sign up" : "Already an agent? Log in"}
-          </Text>
         </Pressable>
       </View>
       {renderAlertModal()}
@@ -652,7 +674,13 @@ export default function RootLayout() {
     );
   };
 
-  if (!mounted) return null;
+  useEffect(() => {
+    if (mounted && fontsLoaded) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [mounted, fontsLoaded]);
+
+  if (!mounted || !fontsLoaded) return null;
 
   if (isCheckingAuth) {
     return (
@@ -661,6 +689,10 @@ export default function RootLayout() {
         <Text style={styles.loadingText}>AUTHORIZING NETWORK ACCESS...</Text>
       </View>
     );
+  }
+
+  if (!isPasswordVerified) {
+    return renderPasswordLogin();
   }
 
   if (needAuth) {
@@ -676,11 +708,12 @@ export default function RootLayout() {
   }
 
   const buttons = [
-    { name: 'Feed',   path: '/',        icon: Flame    },
-    { name: 'Groups', path: '/chaos',   icon: Zap      },
-    { name: 'Spill',  path: '/post',    icon: Plus     },
-    { name: 'Wallet', path: '/wallet',  icon: Ticket   },
-    { name: 'Logs',   path: '/profile', icon: Terminal },
+    { name: 'Feed',     path: '/',        icon: Flame    },
+    { name: 'Groups',   path: '/chaos',   icon: Zap      },
+    { name: 'Bounties', path: '/bounties',icon: Target   },
+    { name: 'Spill',    path: '/post',    icon: Plus     },
+    { name: 'Wallet',   path: '/wallet',  icon: Ticket   },
+    { name: 'Logs',     path: '/profile', icon: Terminal },
   ];
 
   const renderDesktopSidebar = () => (

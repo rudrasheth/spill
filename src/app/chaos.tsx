@@ -9,9 +9,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Send, Users, ShieldAlert, Hash, ChevronLeft, Lock } from 'lucide-react-native';
+import { Send, Users, ShieldAlert, Hash, ChevronLeft, Lock, Plus, Sparkles } from 'lucide-react-native';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
@@ -49,6 +50,13 @@ export default function ChaosRoomsScreen() {
   const [activeUsers, setActiveUsers] = useState(12);
   const [loading, setLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // Group creation states
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupDesc, setNewGroupDesc] = useState('');
+  const [isPrivateGroup, setIsPrivateGroup] = useState(false);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
 
   const loadGroupsData = async (userProfile: any) => {
     if (!userProfile) return;
@@ -232,6 +240,68 @@ export default function ChaosRoomsScreen() {
     }
   };
 
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) {
+      showAlert("Group name cannot be empty.", "Invalid Name", "error");
+      return;
+    }
+    
+    setIsCreatingGroup(true);
+    try {
+      const groupId = newGroupName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      
+      const { data: existingGroup } = await supabase.from('groups').select('id').eq('id', groupId).single();
+      if (existingGroup) {
+        showAlert("A group with a similar name already exists.", "Name Taken", "error");
+        setIsCreatingGroup(false);
+        return;
+      }
+
+      let inviteCode = null;
+      if (isPrivateGroup) {
+        inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
+
+      const { error: groupErr } = await supabase.from('groups').insert([{
+        id: groupId,
+        name: newGroupName.trim(),
+        description: newGroupDesc.trim() || 'Custom group chat.',
+        is_private: isPrivateGroup,
+        invite_code: inviteCode,
+        created_by: currentUser.id
+      }]);
+
+      if (groupErr) throw groupErr;
+
+      const { error: memberErr } = await supabase.from('group_members').insert([{
+        group_id: groupId,
+        user_id: currentUser.id
+      }]);
+
+      if (memberErr) throw memberErr;
+
+      showAlert(
+        isPrivateGroup 
+          ? `Private room created! Share invite code: ${inviteCode}`
+          : `Public room #${newGroupName} created!`, 
+        "Room Established", 
+        "success"
+      );
+      
+      setNewGroupName('');
+      setNewGroupDesc('');
+      setIsPrivateGroup(false);
+      setIsCreateOpen(false);
+      
+      await loadGroupsData(currentUser);
+      setActiveChannel(groupId);
+    } catch (err: any) {
+      showAlert(err.message || "Failed to create group.", "Error", "error");
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  };
+
   if (!activeChannel) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -239,9 +309,90 @@ export default function ChaosRoomsScreen() {
           <View style={styles.titleRow}>
             <Text style={styles.roomName}>My Groups</Text>
           </View>
+          <Pressable
+            style={({ pressed }) => [
+              styles.createBtn,
+              pressed && styles.pressed
+            ]}
+            onPress={() => setIsCreateOpen(!isCreateOpen)}
+            id="btn-group-toggle-create"
+          >
+            <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.createBtnText}>
+              {isCreateOpen ? 'Close Form' : 'New Room'}
+            </Text>
+          </Pressable>
         </View>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: Spacing.four }}>
-          
+          {isCreateOpen && (
+            <View style={styles.createCard}>
+              <Text style={styles.cardHeaderTitle}>CREATE GOSSIP ROOM</Text>
+              
+              <Text style={styles.inputLabel}>ROOM NAME</Text>
+              <TextInput
+                style={styles.joinInput}
+                placeholder="e.g. vc-funding-tea"
+                placeholderTextColor={T.muted}
+                value={newGroupName}
+                onChangeText={setNewGroupName}
+                autoCapitalize="none"
+                id="input-group-name"
+              />
+
+              <Text style={[styles.inputLabel, { marginTop: 12 }]}>DESCRIPTION</Text>
+              <TextInput
+                style={styles.joinInput}
+                placeholder="What is this channel for?"
+                placeholderTextColor={T.muted}
+                value={newGroupDesc}
+                onChangeText={setNewGroupDesc}
+                id="input-group-desc"
+              />
+
+              <Text style={[styles.inputLabel, { marginTop: 12 }]}>PRIVACY TIER</Text>
+              <View style={styles.selectorRow}>
+                <Pressable
+                  style={[styles.selectorBtn, !isPrivateGroup && styles.selectorBtnActive]}
+                  onPress={() => setIsPrivateGroup(false)}
+                  id="btn-group-public"
+                >
+                  <Text style={[styles.selectorBtnText, !isPrivateGroup && styles.selectorBtnTextActive]}>
+                    Public (Open Join)
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.selectorBtn, isPrivateGroup && styles.selectorBtnActive]}
+                  onPress={() => setIsPrivateGroup(true)}
+                  id="btn-group-private"
+                >
+                  <Text style={[styles.selectorBtnText, isPrivateGroup && styles.selectorBtnTextActive]}>
+                    Private (Invite Only)
+                  </Text>
+                </Pressable>
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  pressed && styles.pressed,
+                  isCreatingGroup && styles.disabledBtn
+                ]}
+                onPress={handleCreateGroup}
+                disabled={isCreatingGroup}
+                id="btn-group-submit"
+              >
+                {isCreatingGroup ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Sparkles size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.submitBtnText}>ESTABLISH GOSSIP ROOM</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          )}
+
           <View style={styles.joinCard}>
             <Text style={styles.sectionTitle}>JOIN PRIVATE GROUP</Text>
             <View style={styles.joinRow}>
@@ -659,6 +810,95 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: T.text,
+  },
+  createBtn: {
+    backgroundColor: T.brand,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  createCard: {
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    borderRadius: 12,
+    padding: Spacing.four,
+    marginBottom: Spacing.four,
+  },
+  cardHeaderTitle: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    color: T.brand,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: Spacing.three,
+  },
+  inputLabel: {
+    alignSelf: 'flex-start',
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 8,
+    fontWeight: 'bold',
+    color: T.text,
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  selectorRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginBottom: Spacing.three,
+    marginTop: 4,
+  },
+  selectorBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 6,
+    backgroundColor: T.bg,
+    borderWidth: 1,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectorBtnActive: {
+    backgroundColor: T.brand,
+    borderColor: T.brand,
+  },
+  selectorBtnText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: T.muted,
+  },
+  selectorBtnTextActive: {
+    color: '#FFFFFF',
+  },
+  submitBtn: {
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: T.brand,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    marginTop: 8,
+  },
+  submitBtnText: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 10,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  disabledBtn: {
+    opacity: 0.5,
   },
   noGroupsText: {
     fontFamily: 'Inter',

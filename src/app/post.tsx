@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, Lock, ShieldCheck, ShieldAlert, Sparkles, Clock } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { Spacing } from '@/constants/theme';
 import { supabase, getCurrentUserProfile } from '@/lib/supabase';
@@ -36,11 +36,13 @@ const SEED_IMAGES = {
 };
 
 export default function PostCreationScreen() {
+  const { bounty_id, bounty_desc, bounty_module } = useLocalSearchParams<{ bounty_id?: string; bounty_desc?: string; bounty_module?: string }>();
+
   const [caption, setCaption] = useState('');
   const [unlockPrice, setUnlockPrice] = useState(5);
   const [selectedMediaKey, setSelectedMediaKey] = useState<keyof typeof SEED_IMAGES>('classified_dossier');
   const [customImageUri, setCustomImageUri] = useState<string | null>(null);
-  const [selectedModule, setSelectedModule] = useState<'student' | 'office' | 'other'>('other');
+  const [selectedModule, setSelectedModule] = useState<'student' | 'office' | 'other'>((bounty_module as any) || 'other');
   const [selectedTag, setSelectedTag] = useState<'relationship' | 'money_career' | 'chaos'>('chaos');
   
   const { width } = useWindowDimensions();
@@ -229,7 +231,8 @@ export default function PostCreationScreen() {
         moderation_status: moderationStatus,
         moderation_category: moderationCategory,
         module: selectedModule,
-        tag: selectedTag
+        tag: selectedTag,
+        bounty_id: bounty_id || null
       }]);
 
       await supabase.from('users').update({ token_balance: me.token_balance + 3 }).eq('id', me.id);
@@ -289,6 +292,17 @@ export default function PostCreationScreen() {
             Keep identities hidden · No direct doxxing of real names · Posts will expire based on group rules.
           </Text>
         </View>
+
+        {/* Bounty Info Banner */}
+        {bounty_id && (
+          <View style={styles.bountyBanner}>
+            <Sparkles size={14} color="#E8B23D" style={{ marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bountyBannerTitle}>FULFILLING ACTIVE BOUNTY</Text>
+              <Text style={styles.bountyBannerText}>"{bounty_desc}"</Text>
+            </View>
+          </View>
+        )}
 
         {/* Form Sections */}
         <View style={styles.layoutBody}>
@@ -781,5 +795,29 @@ const styles = StyleSheet.create({
   },
   categoryBtnTextActive: {
     color: '#FFFFFF',
+  },
+  bountyBanner: {
+    backgroundColor: 'rgba(232, 178, 61, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(232, 178, 61, 0.3)',
+    borderRadius: 10,
+    padding: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.four,
+  },
+  bountyBannerTitle: {
+    fontFamily: 'IBM Plex Mono',
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#E8B23D',
+    letterSpacing: 1.5,
+    marginBottom: 4,
+  },
+  bountyBannerText: {
+    fontFamily: 'Inter',
+    fontSize: 12,
+    color: '#1A1A1A',
+    fontWeight: 'bold',
   },
 });

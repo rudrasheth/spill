@@ -95,6 +95,12 @@ export interface Post {
   reported_count: number;
   module: 'student' | 'office' | 'other';
   tag: 'relationship' | 'money_career' | 'chaos';
+  unlock_count?: number;
+  view_count?: number;
+  personalization_score?: number;
+  worth_it_tier?: 'high' | 'mixed' | 'low' | 'unknown';
+  worth_it_reason?: string;
+  bounty_id?: string;
 }
 
 export interface Unlock {

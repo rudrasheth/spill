@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
   Image,
   TextInput,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, Unlock, Eye, HelpCircle, Edit2, Check, X } from 'lucide-react-native';
@@ -22,6 +23,78 @@ const SEED_IMAGES: Record<string, any> = {
   confidential_leak: require('@/assets/images/confidential_leak.png'),
 };
 
+interface PeelableOverlayProps {
+  item: Post;
+  isUnlocked: boolean;
+  onUnlock: () => void;
+}
+
+const PeelableOverlay = ({ item, isUnlocked, onUnlock }: PeelableOverlayProps) => {
+  const peelAnim = useRef(new Animated.Value(0)).current;
+  const [shouldRender, setShouldRender] = useState(!isUnlocked);
+
+  useEffect(() => {
+    if (isUnlocked && shouldRender) {
+      Animated.timing(peelAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setShouldRender(false);
+      });
+    }
+  }, [isUnlocked]);
+
+  if (!shouldRender) return null;
+
+  const translateX = peelAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 300],
+  });
+  const translateY = peelAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -300],
+  });
+  const rotate = peelAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '25deg'],
+  });
+  const opacity = peelAnim.interpolate({
+    inputRange: [0, 0.8, 1],
+    outputRange: [1, 0.5, 0],
+  });
+
+  return (
+    <Animated.View style={[
+      styles.blurOverlay,
+      {
+        opacity,
+        transform: [
+          { translateX },
+          { translateY },
+          { rotate },
+        ]
+      }
+    ]}>
+      <View style={styles.classifiedStamp}>
+        <Text style={styles.classifiedText}>CLASSIFIED</Text>
+      </View>
+      <Text style={styles.overlayTeaser}>Encrypted Spill Media</Text>
+      <Pressable
+        style={({ pressed }) => [
+          styles.unlockButton,
+          pressed && styles.pressed,
+        ]}
+        onPress={onUnlock}
+        id={`btn-unlock-${item.id}`}
+      >
+        <Eye size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+        <Text style={styles.unlockButtonText}>Reveal for {item.unlock_price} Tokens</Text>
+      </Pressable>
+    </Animated.View>
+  );
+};
+
 export default function GossipFeedScreen() {
   const { width } = useWindowDimensions();
   const [posts, setPosts] = useState<Post[]>([]);
@@ -34,6 +107,13 @@ export default function GossipFeedScreen() {
 
   const [affinitiesMap, setAffinitiesMap] = useState<Record<string, number>>({});
   const [activeModuleFilter, setActiveModuleFilter] = useState<'all' | 'student' | 'office' | 'other'>('all');
+  const [expandedWorthItIds, setExpandedWorthItIds] = useState<string[]>([]);
+
+  const toggleWorthIt = (postId: string) => {
+    setExpandedWorthItIds(prev =>
+      prev.includes(postId) ? prev.filter(id => id !== postId) : [...prev, postId]
+    );
+  };
 
   let numCols = 1;
   if (width >= 1024) numCols = 3;
@@ -44,8 +124,19 @@ export default function GossipFeedScreen() {
     if (!me) return;
     setCurrentUser(me);
 
-    const { data: postsData } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
-    if (postsData) setPosts(postsData);
+    // Call the Postgres RPC function for personalized feed!
+    const { data: postsData, error: feedErr } = await supabase.rpc('get_personalized_feed', { p_user_id: me.id });
+    if (feedErr) {
+      console.error("[Feed] RPC error:", feedErr.message);
+    } else if (postsData) {
+      setPosts(postsData);
+      
+      // Auto-increment view counts for posts returned in the feed
+      const postIds = postsData.map((p: any) => p.id);
+      if (postIds.length > 0) {
+        await supabase.rpc('increment_post_views', { p_post_ids: postIds });
+      }
+    }
 
     const { data: unlocksData } = await supabase.from('unlocks').select('*').eq('unlocker_id', me.id);
     if (unlocksData) setUnlockedPostIds(unlocksData.map((u: any) => u.post_id));
@@ -57,16 +148,6 @@ export default function GossipFeedScreen() {
       usersData.forEach((u: any) => map[u.id] = u.alias);
       setAuthorsMap(map);
     }
-
-    // Fetch user tag affinities
-    const { data: affinitiesData } = await supabase.from('user_tag_affinity').select('*').eq('user_id', me.id);
-    if (affinitiesData) {
-      const affMap: Record<string, number> = {};
-      affinitiesData.forEach((a: any) => {
-        affMap[a.tag] = a.affinity_score;
-      });
-      setAffinitiesMap(affMap);
-    }
   };
 
   const getPersonalizedPosts = () => {
@@ -75,43 +156,8 @@ export default function GossipFeedScreen() {
     if (activeModuleFilter !== 'all') {
       filtered = posts.filter(p => p.module === activeModuleFilter);
     }
-
-    // 2. Score each post
-    const scored = filtered.map(post => {
-      let score = 0;
-
-      // Tag affinity score
-      const tagAff = affinitiesMap[post.tag] || 1.0;
-      score += tagAff;
-
-      // Module affinity score
-      const modAff = affinitiesMap[post.module] || 1.0;
-      score += modAff;
-
-      // Spend threshold adjustments
-      const price = post.unlock_price || 0;
-      const spend = currentUser?.spend_threshold;
-      if (spend === 'only_a_tier') {
-        if (price > 5) {
-          score -= 2.0; // penalty for expensive posts unless tag affinity is very high
-        }
-      } else if (spend === 'rarely_unlock') {
-        if (price > 3) {
-          score -= (price - 3) * 1.5; // heavy penalty for more expensive posts
-        }
-      }
-
-      // Time decay: newer posts get higher relevance
-      const ageHours = (Date.now() - new Date(post.created_at).getTime()) / (3600 * 1000);
-      score -= ageHours * 0.25;
-
-      return { post, score };
-    });
-
-    // 3. Sort by score descending
-    scored.sort((a, b) => b.score - a.score);
-
-    return scored.map(item => item.post);
+    // Sort by personalization_score descending (since database computed it)
+    return [...filtered].sort((a: any, b: any) => (b.personalization_score || 0) - (a.personalization_score || 0));
   };
 
   useEffect(() => {
@@ -184,8 +230,35 @@ export default function GossipFeedScreen() {
             <Text style={styles.postTagText}>
               #{item.tag === 'relationship' ? 'Relationship' : item.tag === 'money_career' ? 'Money' : 'Chaos'}
             </Text>
+            {!isUnlocked && (
+              <Pressable
+                onPress={() => toggleWorthIt(item.id)}
+                style={[
+                  styles.worthItBadge,
+                  item.worth_it_tier === 'high' ? styles.worthItBadgeHigh : styles.worthItBadgeMuted
+                ]}
+                id={`btn-worthit-${item.id}`}
+              >
+                <Text style={[
+                  styles.worthItBadgeText,
+                  item.worth_it_tier === 'high' ? styles.worthItBadgeTextHigh : styles.worthItBadgeTextMuted
+                ]}>
+                  {item.worth_it_tier === 'high' ? '🔥 Worth It' :
+                   item.worth_it_tier === 'mixed' ? '🤔 Mixed' : '❓ New'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         </View>
+
+        {/* Worth It Explanation Container */}
+        {expandedWorthItIds.includes(item.id) && !isUnlocked && (
+          <View style={styles.worthItReasonContainer}>
+            <Text style={styles.worthItReasonText}>
+              {item.worth_it_reason || 'New poster — no history yet'}
+            </Text>
+          </View>
+        )}
 
         {/* Media (Blurred/Unlocked) */}
         <View style={styles.mediaContainer}>
@@ -196,25 +269,11 @@ export default function GossipFeedScreen() {
             resizeMode="cover"
           />
 
-          {!isUnlocked && (
-            <View style={styles.blurOverlay}>
-              <View style={styles.lockBadge}>
-                <Lock size={18} color="#FF3B5C" />
-              </View>
-              <Text style={styles.overlayTeaser}>Encrypted Spill Media</Text>
-              <Pressable
-                style={({ pressed }) => [
-                  styles.unlockButton,
-                  pressed && styles.pressed,
-                ]}
-                onPress={() => handleUnlockPost(item.id, item.unlock_price)}
-                id={`btn-unlock-${item.id}`}
-              >
-                <Eye size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.unlockButtonText}>Reveal for {item.unlock_price} Tokens</Text>
-              </Pressable>
-            </View>
-          )}
+          <PeelableOverlay
+            item={item}
+            isUnlocked={isUnlocked}
+            onUnlock={() => handleUnlockPost(item.id, item.unlock_price)}
+          />
         </View>
 
         {/* Body Text */}
@@ -656,5 +715,65 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: '#8A8A8A',
+  },
+  worthItBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    borderWidth: 0.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  worthItBadgeHigh: {
+    backgroundColor: '#FF3B5C',
+    borderColor: '#FF3B5C',
+  },
+  worthItBadgeMuted: {
+    backgroundColor: '#F5F5F5',
+    borderColor: '#EAEAEA',
+  },
+  worthItBadgeText: {
+    fontFamily: 'Inter',
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  worthItBadgeTextHigh: {
+    color: '#FFFFFF',
+  },
+  worthItBadgeTextMuted: {
+    color: '#8A8A8A',
+  },
+  worthItReasonContainer: {
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#EAEAEA',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: Spacing.two,
+    marginHorizontal: Spacing.half,
+  },
+  worthItReasonText: {
+    fontFamily: 'Inter',
+    fontSize: 11,
+    color: '#1A1A1A',
+    lineHeight: 15,
+  },
+  classifiedStamp: {
+    borderWidth: 2.5,
+    borderColor: '#FF3B5C',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 4,
+    transform: [{ rotate: '-8deg' }],
+    marginBottom: 16,
+    backgroundColor: 'rgba(255, 59, 92, 0.05)',
+  },
+  classifiedText: {
+    fontFamily: 'Outfit',
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#FF3B5C',
+    letterSpacing: 2,
+    textAlign: 'center',
   },
 });
