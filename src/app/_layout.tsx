@@ -58,7 +58,7 @@ export default function RootLayout() {
   });
 
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
+  const [isPasswordVerified, setIsPasswordVerified] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [needProfileSetup, setNeedProfileSetup] = useState(false);
   const [needQuiz, setNeedQuiz] = useState(false);
@@ -136,31 +136,25 @@ export default function RootLayout() {
 
   const checkOnboarding = async () => {
     try {
-      const verified = await getSecureItem('spill_password_verified');
-      if (verified === 'true') {
-        setIsPasswordVerified(true);
-        const profile = await getCurrentUserProfile();
-        if (profile) {
-          setNeedAuth(false);
-          setUserProfile(profile);
-          const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
-          
-          if (hasDefaultAlias || !profile.avatar) {
-            setNeedProfileSetup(true);
-            setNeedQuiz(profile.role == null);
-          } else if (profile.role == null) {
-            setNeedProfileSetup(false);
-            setNeedQuiz(true);
-          } else {
-            setNeedProfileSetup(false);
-            setNeedQuiz(false);
-          }
+      setIsPasswordVerified(true);
+      const profile = await getCurrentUserProfile();
+      if (profile) {
+        setNeedAuth(false);
+        setUserProfile(profile);
+        const hasDefaultAlias = profile.alias.startsWith('TeaSpiller_');
+        
+        if (hasDefaultAlias || !profile.avatar) {
+          setNeedProfileSetup(true);
+          setNeedQuiz(profile.role == null);
+        } else if (profile.role == null) {
+          setNeedProfileSetup(false);
+          setNeedQuiz(true);
         } else {
-          setNeedAuth(true);
+          setNeedProfileSetup(false);
+          setNeedQuiz(false);
         }
       } else {
-        setIsPasswordVerified(false);
-        setNeedAuth(false);
+        setNeedAuth(true);
       }
     } catch (e) {
       console.error("[Onboarding] check error:", e);
